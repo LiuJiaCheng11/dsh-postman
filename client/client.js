@@ -53,8 +53,8 @@ window.__ModuleLoader__.load({
       save: '保存',
       saving: '保存中…',
       clear: '清除',
-      saved: '已保存，立即生效。',
-      cleared: '已清除，回退到下一个来源。',
+      saved: '已保存。若当前会话仍读到旧 Key，新开一个会话或重启 dsh。',
+      cleared: '已清除，回退到下一个来源。同上，必要时新开会话。',
       saveFailed: '保存未生效（Host 拒绝或写入冲突），请重试。',
       unavailable: '当前 Host 未提供 dsh-postman 设置命名空间，无法在此配置。',
       readOnly: '当前部署的设置是只读的，无法在此写入。',
@@ -74,8 +74,8 @@ window.__ModuleLoader__.load({
       save: 'Save',
       saving: 'Saving…',
       clear: 'Clear',
-      saved: 'Saved and applied.',
-      cleared: 'Cleared; the next source takes over.',
+      saved: 'Saved. If this session still reads the old key, open a new session or restart dsh.',
+      cleared: 'Cleared; the next source takes over. As above, a new session may be needed.',
       saveFailed: 'The save did not land (Host refused it or the write conflicted). Try again.',
       unavailable: 'This Host does not serve the dsh-postman settings namespace, so it cannot be configured here.',
       readOnly: 'Settings are read-only in this deployment.',
@@ -295,6 +295,19 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       const t = ctx.locale.bind(LOCALE_NS)
       ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh, en }), 'dsh-postman: dictionaries')
+
+      // 设置表单服务（configForms）与 settings.section 槽位都是 0.2.x 才有的。
+      // 0.1.x 的客户端没有这两个东西 —— 缺了就静默退出，不要抛错（抛错会污染
+      // 整个客户端启动，表现为「设置里少一页」之外还多一堆控制台错误）。
+      // 宿主半边的工具不受影响：Key 仍可通过 cordis.patch.yml 或回退来源配置。
+      if (ctx.configForms === undefined || ctx.configForms === null) {
+        console.warn('[dsh-postman] 客户端未提供 configForms（0.2.x 才有），跳过设置分区注册。')
+        return
+      }
+      if (ctx.slots === undefined || ctx.slots === null) {
+        console.warn('[dsh-postman] 客户端未提供 slots 服务，跳过设置分区注册。')
+        return
+      }
 
       const controller = createController(ctx)
       ctx.effect(() => () => { controller.dispose() }, 'dsh-postman: form subscriptions')

@@ -3,6 +3,53 @@
 本文件记录 dsh-postman 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.1] — 2026-10-10
+
+封板前的实测复核与健壮性收口。
+
+### Added
+
+- `test/probe-key.sh`：真启动后直接 `GET /dsh-postman/api/config`，打印插件**实际认的
+  Key 来源**。排查「明明配了却读不到」最快的一招（不用开 UI）。
+- `test/livereload-probe.sh`：验证「外部改 `cordis.patch.yml` 不会热加载」。自带备份 +
+  trap 还原，并要求 `I_KNOW=1` 才运行（它会临时改 profile）。
+- `test/client-bundle.js` 新增 2 条断言（共 11 条）：0.1.x 缺 `configForms` 时不抛错、
+  保存文案不承诺「立即生效」。
+- README 新增「保存为什么可能不马上生效」与「已知限制」两节。
+
+### Changed
+
+- 客户端 `apply()` 增加守卫：`configForms` / `slots` 缺失时**静默退出**并打一条
+  `console.warn`。此前会抛 `TypeError` —— 在只有 0.1.x 客户端的部署里会污染整个
+  客户端启动（表现为「设置里少一页」之外还多一堆控制台错误）。
+- 保存成功文案：`已保存，立即生效。` → `已保存。若当前会话仍读到旧 Key，新开一个
+  会话或重启 dsh。`（英文同步）。原文案是**错的**：见下。
+- README 修正「保存后立即生效」的说法，并写清完整写入链路与两种失效场景。
+
+### Fixed
+
+- **纠正「设置页保存需要重启 dsh」这个中间结论**。实测发现：
+  - 走设置页那条通道（`configForms.set()` → `remote.settings.mutate` → 宿主
+    `settings.update(ns)` → `configEditor.edit(entry)`）**是热的** —— `configEditor`
+    的文档就是 profile 的 patch 文件，写完后会显式
+    `reconcileProfilePatches(root, patches, 'dsh', [entryId])` 重载该条目。
+  - **外部**直接改 `cordis.patch.yml` 才不会被热加载（实测改完等 12 秒无变化）。
+  - 真实会话里出现「设置存了 Key、`postman_config` 仍显示历史文件」，是**长会话持有旧
+    工具闭包**所致，新开会话即恢复；不是配置没写进去（已核对 `cordis.patch.yml` 内容）。
+- 确认主目标运行时是本机的**源码 0.2.0-rc.2**
+  （`node --expose-internals --import tsx/esm apps/cli/src/bin.ts web`）。
+  `settings.section` 与 `configForms` 在已安装的 0.1.1-rc.1 里**都不存在**，
+  所以客户端那一页只在 0.2.x 上出现；0.1.x 用备用页 `/dsh-postman`。
+
+### 实测（本轮复核依据）
+
+- 一次真实会话（450 次工具调用）里 postman 工具共 **15 次、0 报错**：
+  `add×7 tree×2 pull×2 rm×2 config×1 list×1`。同会话的 20 个报错全部来自
+  `browser-skill`（`bsk`），与本插件无关。
+- 两个运行时的真启动探测一致：全新启动时
+  `source = 插件配置（dsh 设置页 / cordis.patch.yml / 环境变量）`。
+- `npm run check` = 0；`npm test` = 0（40 ✓）。
+
 ## [0.4.0] — 2026-10-10
 
 ### Added

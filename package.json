@@ -1,6 +1,6 @@
 {
   "name": "dsh-postman",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "dsh 插件 · Postman 云端集合管理：让 AI 查询/新增/删除接口、扫源码自动同步，内置 /postman-skill 技能与「设置 → postman」配置页。",
   "license": "MIT",
   "type": "commonjs",

@@ -32,18 +32,25 @@ dsh --profile web --dump-config | grep -i postman
 ## 配置 Postman API Key
 
 **推荐：在 dsh 里打开「设置 → Postman」**，直接填进表单。因为标了 `role('secret')`，
-读取时值被抹掉、页面只显示「已配置 / 未配置」，明文不回流浏览器；保存后立即生效。
+读取时值被抹掉、页面只显示「已配置 / 未配置」，明文不回流浏览器。
 
 在 [Postman 账号设置 → API Keys](https://web.postman.co/settings/me/api-keys) 生成 Key（`PMAK-` 开头）。
 
+> **保存后如果当前会话仍读到旧 Key**（用 `postman_config` 看 `来源：` 那行就知道）：
+> 换一个**新会话**，或重启 dsh。原因见下方「保存为什么可能不马上生效」。
+
 留空时的回退顺序：
 
-1. 设置表单里的 `apiKey`（profile user 层）
+1. 设置表单里的 `apiKey`（写入 profile 的 patch 层，即 `~/.dsh/profiles/<profile>/cordis.patch.yml`）
 2. `~/.dsh/dsh-postman/config.json`（备用页写入，权限 0600）
 3. `~/.postman_api_key`（历史文件）
 4. `POSTMAN_API_KEY` 环境变量
 
+`postman_config` 的 `status` 会直接告诉你当前用的是哪一条来源，排查时先看它。
+
 备用页在 `http://127.0.0.1:<port>/dsh-postman`，功能与设置表单等价，多了「保存并验证」。
+**它写的是上面第 2 条**（`~/.dsh/dsh-postman/config.json`），每次取 Key 都重新读文件，
+所以改完立刻生效、不受会话新旧影响 —— 设置页遇到怪问题时可以用它兜底。
 
 ### 设置页是怎么来的（关键：光导出 `Config` 不够）
 
@@ -52,7 +59,7 @@ dsh 里并存着**两套**设置服务实现，插件对两套都做了适配，
 | dsh 版本 | 实现 | `describe()` 的数据来源 | 本插件的适配 |
 | --- | --- | --- | --- |
 | 0.2.x | `SettingsForms` | 遍历 profile 条目，取 `entry.fiber.runtime.Config` 当 schema；`volatileForm()` 会丢掉没有任何 volatile 字段的条目 | 导出 `Config`（`src/index.js` 顶部） |
-| 0.1.x | `SettingsProvider` | 只列**显式注册过**的命名空间 | 调 `settings.register('dsh-postman', Config, { base })`，并 `watch()` 变更做实时生效 |
+| 0.1.x | `SettingsProvider` | 只列**显式注册过**的命名空间 | 调 `settings.register('dsh-postman', Config, { base })`，并 `watch()` 变更 |
 
 两条路径互不干扰：0.2.x 的服务没有 `register` 方法，插件会直接跳过；0.1.x 不读 `Config`。
 
@@ -74,13 +81,37 @@ Web 客户端的设置导航行**只**来自客户端注册的 `settings.section
   只回一个 `set` 布尔），所以页面永远拿不到明文。
 - 用 `configForms.whileServed(['dsh-postman'], …)` 包住注册：命名空间没被服务时不出现这一页。
 
-> 自检（三层，缺一层就会漏掉一种失败）：
+> **客户端这一页只在 0.2.x 上出现。** `settings.section` 槽位与 `configForms` 服务都是
+> 0.2.x 的 `ui-settings` 才有的（在已安装的 0.1.1-rc.1 里全仓搜不到这两个名字）。
+> 插件对这种情况做了兜底：`apply()` 发现 `configForms` 缺失就**静默退出**，不抛错。
+> 0.1.x 上请用备用页 `/dsh-postman` 配置，或直接写 `cordis.patch.yml`。
+
+#### 保存为什么可能不马上生效
+
+设置页的写入链路是：`configForms.set()` → `remote.settings.mutate` → 宿主
+`settings.update(ns)` → `configEditor.edit(entry)`。0.2.x 里 `configEditor` 的文档就是
+profile 的 patch 文件（`documentPath === profileContext.patchPath`），写完后它会
+**显式 `reconcileProfilePatches(..., [entryId])` 重载该条目**，所以插件配置本身是热更新的。
+
+但要注意两点：
+
+1. **外部直接改 `cordis.patch.yml` 不会被热加载**（实测：运行中改文件、等 12 秒，
+   插件仍报旧来源）。只有走设置页/`configEditor` 这条通道才会 reconcile。
+2. 已经跑起来的长会话可能仍持有**旧的工具闭包**（工具对象在会话建立时就固定了），
+   于是新 Key 要等**新会话**才被读到。这就是「设置里存了 Key，`postman_config` 却
+   还显示历史文件」的成因 —— 不是没存进去，是那个会话还没换上新配置。
+
+**想立刻生效、且不想管会话新旧**：用备用页 `/dsh-postman`，它每次取 Key 都重读文件。
+
+> 自检（四层，缺一层就会漏掉一种失败）：
 > - `node test/settings-page.js` —— 复刻 dsh 已构建产物里的表单投影逻辑跑真实 `Config`，
 >   并带一条反向对照（去掉 volatile → 条目必被丢弃）。
 > - `node test/client-bundle.js` —— 在假浏览器里加载 `client/client.js`，验证
->   bundle id、槽位注册与写入路径。
+>   bundle id、槽位注册与写入路径，以及「0.1.x 没有 configForms 时不抛错」。
 > - `bash test/client-served.sh` —— **真启动**，从 index.html 的启动图里读出该插件的
 >   bundle 地址再取回来校验（`dsh.client` 接线错了宿主不会报错，只会让那一页消失）。
+> - `bash test/probe-key.sh` —— **真启动**后直接 `GET /dsh-postman/api/config`，
+>   看插件实际认的是哪一条 Key 来源（排查「我明明配了却读不到」最快的一招）。
 >
 > 想直接看宿主侧的判定：`dsh --profile web --dump-config-schema`，
 > `dsh-postman` 应指向真实 schema（如 `#/$defs/config101`）而不是 `unknownConfig`。
@@ -150,6 +181,20 @@ Web 客户端的设置导航行**只**来自客户端注册的 `settings.section
 - `[RightAuthorize("...")]` → 权限备注；`[ExportToFile]` → 导出接口备注
 - 自动跳过 `obj/ bin/ .vs/ .git/ node_modules/ packages/ .build-tmp/`
 
+## 已知限制
+
+这些是真实使用中观察到的摩擦点（在一次 500+ 请求的集合上实测），**目前不改 API**，
+知道怎么绕就行：
+
+| 现象 | 原因 | 绕过办法 |
+|---|---|---|
+| `postman_tree` 在一个 500+ 请求的集合上输出很长，模型可能只看到前半段 | 工具一次性渲染整棵树，没有分页/过滤参数 | 用 `postman_pull` 导出到文件再查；或在集合里先定位到子目录 |
+| 想改一个已存在接口的请求体，没有「编辑」动作 | 只有 `add` / `rm` | 按技能里的写法 **先 `postman_rm` 再 `postman_add`**（工具没有 edit，技能里已写明） |
+| 每次写操作都会 PUT 整个集合 | Postman API 的 PUT 是整体覆盖 | 工具已自动先 GET 最新版本并备份到 `~/.postman_backup/`，正常使用无感 |
+
+> 如果后面要加 `postman_edit` / `postman_tree` 的 `folder` 过滤，属于**加 API**，
+> 要同步改技能正文与系统提示里的工具清单，别只改 `src/index.js`。
+
 ## 安全说明
 
 - **PUT 是整体覆盖**：每次写操作前都会先 `GET` 最新云端版本，并备份到 `~/.postman_backup/<uid>.json`。
@@ -184,6 +229,8 @@ dsh-postman/
     client-bundle.js    # 客户端 bundle 单测（假浏览器 + 假 React）
     realstart.sh        # 真启动：探宿主路由 + 查致命报错
     client-served.sh    # 真启动：确认客户端 bundle 被编入启动图并正常发出
+    probe-key.sh        # 真启动：探 /dsh-postman/api/config，看 Key 实际来源
+    livereload-probe.sh # 真启动：验证「外部改 patch 文件不会热加载」（会临时改 profile，自带备份还原）
   scripts/
     setup-publish.sh    # 一键填仓库地址 + 生成市场投稿文件
   .github/workflows/
@@ -202,6 +249,7 @@ node test/settings-page.js # 命名空间会不会进 describe()（含反向对�
 node test/client-bundle.js # 客户端 bundle 的注册契约与写入路径
 npm run test:real          # 真启动：宿主路由 + 客户端 bundle 都要过
 npm run test:client        # 只跑客户端 bundle 的真启动验证
+bash test/probe-key.sh     # 真启动后看 Key 实际来源（排查配置问题的第一招）
 ```
 
 > `test:real` 会在空闲端口拉起真实 dsh 实例，做两件事：
@@ -225,6 +273,11 @@ npm run test:client        # 只跑客户端 bundle 的真启动验证
 > DSH="E:/software/deepseek-harness/apps/cli/lib/bin.js" bash test/client-served.sh 3098
 > ```
 >
+> **主目标运行时是源码仓库那份 0.2.0-rc.2**（本机是以
+> `node --expose-internals --import tsx/esm apps/cli/src/bin.ts web` 从源码起的）。
+> 只有它同时具备 `settings.section` 槽位与 `configForms`，也就是「设置 → Postman」
+> 那一页能出现的那一套。已安装的 0.1.1-rc.1 只保证工具与备用页可用。
+>
 > 两者发 bundle 的 URL 格式不同，`client-served.sh` 两种都认：
 > 0.2.x 是 combo（`/plugins/??dsh-postman/client.js&rev=…`），
 > 0.1.x 是单资源（`/plugins/dsh-postman/client.js?rev=…`）。
@@ -240,6 +293,17 @@ npm run test:client        # 只跑客户端 bundle 的真启动验证
 在一套多模块 .NET 项目上扫过约 **5000 条路由**（40+ 模块、600+ 控制器，扫描耗时约 10 秒），
 与 Postman 集合比对覆盖率约 **74%**；未匹配的多为第三方服务路径或已变更接口。
 具体数字取决于项目结构与集合新旧，仅供参考。
+
+一次真实会话里的调用分布（从 dsh 会话记录统计，共 450 次工具调用）：
+
+```
+postman_add 7   postman_tree 2   postman_pull 2   postman_rm 2
+postman_config 1   postman_list 1        ← 共 15 次，0 次报错
+```
+
+那次任务是在一个 518 请求的集合里往空目录加 5 个接口：先 `config` 确认 Key 来源 →
+`list` 找集合 → `tree` 定位空目录 → 连加 5 个 → `tree`/`pull` 复核 → 发现两个请求体是
+占位符 → `rm` + `add` 修正 → 再 `pull` 终验。集合请求数 518 → 523，全程无误报。
 
 ## 发布
 

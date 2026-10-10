@@ -12,11 +12,13 @@
  *   - 一个极简 React 桩（createElement / useState / useSyncExternalStore）；
  *   - 假的 `slots` / `locale` / `configForms` 服务。
  *
- * 断言四件事：
+ * 断言六件事：
  *   1. bundle 用正确的 id（包名）注册，导出 name/inject/apply；
  *   2. 命名空间被服务时才注册 `settings.section`，id 是 postman；
  *   3. 组件在「可用 / 不可用」两种状态下都能构造出元素树，且可用时含密码输入框；
- *   4. 页面写 Key 走的是 `configForms` 的 set/unset（命名空间 dsh-postman）。
+ *   4. 页面写 Key 走的是 `configForms` 的 set/unset（命名空间 dsh-postman）；
+ *   5. 0.1.x 客户端没有 configForms 时**静默退出而不抛错**（抛错会污染客户端启动）；
+ *   6. 保存文案不承诺「立即生效」（长会话可能仍持有旧工具闭包）。
  *
  * 运行：node test/client-bundle.js
  */
@@ -66,7 +68,7 @@ function loadBundle() {
  * @param {{served?: boolean, writable?: boolean, status?: string, configured?: boolean}} [options]
  */
 function makeCtx(options = {}) {
-  const { served = true, writable = true, status = 'ready', configured = false } = options
+  const { served = true, writable = true, status = 'ready', configured = false, noConfigForms = false } = options
   const sections = []
   const effects = []
   const writes = []
@@ -155,6 +157,9 @@ function makeCtx(options = {}) {
       },
     },
   }
+
+  // 0.1.x 的客户端没有 configForms 服务（只有 0.2.x 的 ui-settings 提供）。
+  if (noConfigForms) delete ctx.configForms
 
   return { ctx, sections, effects, writes, dicts, servedHooks, form, mirror }
 }
@@ -327,6 +332,33 @@ check('控制器快照暴露 status/writable/configured', () => {
   assert.strictEqual(snapshot.status, 'ready')
   assert.strictEqual(snapshot.writable, false)
   assert.strictEqual(snapshot.configured, true)
+})
+
+check('缺少 configForms（0.1.x 客户端）时静默退出，不抛错', () => {
+  const { ctx, sections, effects } = makeCtx({ noConfigForms: true })
+  const mod = registration.factory((id) => {
+    if (id === 'react') return ReactStub
+    throw new Error(`未预期的 require：${id}`)
+  })
+  // 不能抛：抛错会污染整个客户端启动
+  mod.apply(ctx)
+  assert.strictEqual(sections.length, 0, '没有 configForms 时不应注册分区')
+  assert.ok(!effects.some((l) => /form subscriptions/.test(l)), '不应建立表单订阅')
+  assert.ok(effects.some((l) => /dictionaries/.test(l)), '字典仍应注册（无害）')
+})
+
+check('保存成功的文案不承诺「立即生效」（长会话可能持有旧配置）', () => {
+  const { ctx, dicts } = makeCtx()
+  const mod = registration.factory((id) => {
+    if (id === 'react') return ReactStub
+    throw new Error(`未预期的 require：${id}`)
+  })
+  mod.apply(ctx)
+  const zhSaved = dicts.get('settings.postman').zh.saved
+  const enSaved = dicts.get('settings.postman').en.saved
+  assert.ok(!zhSaved.includes('立即生效'), '中文文案不应声称立即生效')
+  assert.ok(/新开一个会话|重启/.test(zhSaved), '中文文案应给出「新开会话/重启」的退路')
+  assert.ok(/new session|restart/i.test(enSaved), '英文文案应给出「new session/restart」的退路')
 })
 
 // 异步断言收尾
