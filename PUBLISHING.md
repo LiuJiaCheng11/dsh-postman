@@ -194,6 +194,18 @@ npm run check:marketplace
 直接打开上游的 `/compare` 页面会看到 **Create pull request 是灰的**——因为 base 和 head
 都指向上游同一个仓库的同一个分支，没有差异可比。compare 页面是「比出差异」，不是「发起投稿」。
 
+> **已经 fork 了、文件也提交了，按钮还是灰？** 这不是没 fork 成功，是那个页面的两个下拉框
+> **默认都指向上游仓库**——`base: main` 和 `compare: main` 都是 `awesome-dsh-plugin/awesome-dsh-plugin`
+> 自己的分支，等于上游跟自己比，差异恒为 0，看不到你 fork 里的提交。
+> 两种解法，任选：
+> 1. 点句子里的 **compare across forks** 链接（在「Compare changes」下方那段文字里），
+>    页面会多出一行 **head repository** 下拉框 → 把它选成 `LiuJiaCheng11/awesome-dsh-plugin`，
+>    分支选 `main`，按钮立刻变绿。
+> 2. 更省事：直接走下面的**第 6 步**（回 fork 首页用 Contribute），或点第 5 步后的直链。
+>
+> 为什么容易踩：fork 的**仓库名和上游一模一样**，两个下拉框里都写着 `awesome-dsh-plugin`，
+> 肉眼分不出哪个是上游、哪个是自己的。
+
 1. 打开 https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/fork ，点 **Create fork**。
    得到 `github.com/LiuJiaCheng11/awesome-dsh-plugin`。
 2. **在你的 fork 里**（不是上游）点 **Add file** → **Create new file**。
