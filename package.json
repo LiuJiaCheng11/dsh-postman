@@ -1,6 +1,6 @@
 {
   "name": "dsh-postman",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "dsh 插件 · Postman 云端集合管理：列出/查看/新增/删除接口，内置配置页填写 Postman API Key。零外部依赖。",
   "license": "MIT",
   "type": "commonjs",
@@ -38,8 +38,8 @@
     }
   },
   "scripts": {
-    "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/page.js",
-    "test": "node test/smoke.js",
+    "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/route-scanner.js && node --check src/page.js",
+    "test": "node test/smoke.js && node test/scanner.js",
     "prepublishOnly": "npm run check && npm test"
   },
   "publishConfig": {
