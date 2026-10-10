@@ -159,30 +159,63 @@ description:
 
 ### 步骤
 
+#### 前置：先本地彩排
+
 ```sh
 # 0. 先确保改动都推上去了（CI 读的是 GitHub 上的 package.json，不是本地的）
 git push
 
-# 1. 本地彩排：把官方校验规则过一遍（需先 npm i -D js-yaml）
+# 1. 把官方校验规则过一遍（需先 npm i -D js-yaml）
 npm run check:marketplace
-
-# 2. Fork 官方列表仓库，然后（在 fork 里）：
-mkdir -p data/plugins
-cp <本仓库>/marketplace/LiuJiaCheng11__dsh-postman.yml data/plugins/
-git add data/plugins/LiuJiaCheng11__dsh-postman.yml
-git commit -m "Add LiuJiaCheng11/dsh-postman"
-git push
 ```
 
-3. 回 GitHub 提 PR，**按 `.github/pull_request_template.md` 的清单逐项自查**（六条勾选框）。
-   一个 PR 最多加 3 条，我们只加 1 条。**只加文件，不要手工改 README**（README 由 `main` 上自动重新生成）。
-4. CI 跑完后：年龄那关可能是红的——**不用管，也别重开 PR**，`regate.yml` 会在 6 小时内自动重跑。
-   其他检查若报错，会在 PR 评论里写明改什么，在**同一分支**推修复即可，无需重开。
-5. 合并后站点 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 与 `dshmarket` 面板自动收录。
+#### 路径 A：网页操作（不用装 git）
+
+⚠️ **顺序不能反：先 fork，再在 fork 里提交文件。**
+直接打开上游的 `/compare` 页面会看到 **Create pull request 是灰的**——因为 base 和 head
+都指向上游同一个仓库的同一个分支，没有差异可比。compare 页面是「比出差异」，不是「发起投稿」。
+
+1. 打开 https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/fork ，点 **Create fork**。
+   得到 `github.com/LiuJiaCheng11/awesome-dsh-plugin`。
+2. **在你的 fork 里**（不是上游）点 **Add file** → **Create new file**。
+3. 文件名填 `data/plugins/LiuJiaCheng11__dsh-postman.yml`
+   —— 输入 `/` 时 GitHub 会自动把前面那段建成目录，不用手动建文件夹。
+4. 粘贴 [`marketplace/LiuJiaCheng11__dsh-postman.yml`](marketplace/LiuJiaCheng11__dsh-postman.yml)
+   的 6 行内容。
+5. 点 **Commit changes…** → **Commit changes**（提交到 `main` 即可）。
+6. 回到 fork 首页，顶部会出现横幅
+   「This branch is 1 commit ahead of awesome-dsh-plugin:main」→ 点 **Contribute** →
+   **Open pull request**。
+
+> 第 5 步之后也可以直接用这个 URL（会自动展开表单）：
+> `https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/compare/main...LiuJiaCheng11:awesome-dsh-plugin:main?expand=1`
+
+#### 路径 B：命令行
+
+```sh
+git clone git@github.com:LiuJiaCheng11/awesome-dsh-plugin.git
+cd awesome-dsh-plugin
+mkdir -p data/plugins
+cp <本仓库>/marketplace/LiuJiaCheng11__dsh-postman.yml data/plugins/
+git checkout -b add-dsh-postman
+git add data/plugins/LiuJiaCheng11__dsh-postman.yml
+git commit -m "Add LiuJiaCheng11/dsh-postman"
+git push -u origin add-dsh-postman
+```
+
+然后按 GitHub 输出的链接开 PR。
+
+#### PR 提交后
+
+- **按 `.github/pull_request_template.md` 的清单逐项勾选**（六条勾选框）。我们只加 1 条，上限是 3 条。
+- **只加文件，不要手工改 README**（README 由 `main` 上自动重新生成）。
+- CI 跑完后：年龄那关可能是红的——**不用管，也别重开 PR**，`regate.yml` 会在 6 小时内自动重跑。
+  其他检查若报错，会在 PR 评论里写明改什么，在**同一分支**推修复即可，无需重开。
+- 合并后站点 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 与 `dshmarket` 面板自动收录。
 
 > **维护者会实际读仓库。** 评审看的六件事里包括「代码是否与描述一致」「是否真实可用」「源码有无可疑之处」。
-> 所以推之前记得确认远端 `package.json` 的 `repository` 不是占位符——本地已改成 `LiuJiaCheng11`，
-> 但那笔提交（`42530c4`）**当时还没推**，远端读到的仍是 `USERNAME`。
+> 所以推之前记得确认远端 `package.json` 的 `repository` 不是占位符——那笔修复（`42530c4`）
+> 一度没推，远端读到的还是 `USERNAME`，现已推送。
 
 ### 可选但推荐（不是门槛）
 
