@@ -52,6 +52,14 @@ let Config
           .string()
           .role('secret')
           .default('')
+          // 必须标 volatile：dsh 的 settings 用 volatileForm() 过滤表单，
+          // 非 volatile 的叶子字段会被丢弃；一个字段都不剩时整个条目被滤掉，
+          // 设置里就不会出现这一页（见 @deepseek-ai/dsh-settings 的 src/schema.ts）。
+          //
+          // 这里用 extra('volatile', true) 而不是 .volatile()：后者是
+          // schemastery 3.18.4 才有的语法糖（实现就是 this.extra('volatile', true)），
+          // 而 dsh 运行时可能加载 3.18.1（没有该方法，会直接抛错）。
+          .extra('volatile', true)
           .description(
             'Postman API Key（PMAK- 开头）。留空则依次回退到 ~/.dsh/dsh-postman/config.json、' +
               '~/.postman_api_key、POSTMAN_API_KEY 环境变量。'
@@ -63,8 +71,41 @@ let Config
   }
 }
 
-// ── 技能（斜杠命令 /postman-skill） ──────────────────────────────────────────
+/**
+ * 解开 cordis 的 Volatile 包装。
+ *
+ * schema 标了 volatile 的字段，插件拿到的不是裸值而是一个引用对象（有 `.get()`）。
+ * dsh 自己的插件也是这么处理的（如 `llm-deepseek-api-key` 里的 `config.apiKeyEnv.get()`）。
+ * 这里做一次归一化，让下游只面对普通值。
+ *
+ * @param {unknown} value 配置里的一个字段值。
+ * @returns {unknown} 解包后的普通值。
+ */
+function unwrapVolatile(value) {
+  if (value === null || value === undefined) return value
+  if (typeof value === 'object' && typeof value.get === 'function') {
+    try {
+      return value.get()
+    } catch {
+      return undefined
+    }
+  }
+  return value
+}
 
+/**
+ * 归一化插件配置：解 Volatile 包装，保证是个普通对象。
+ * @param {unknown} rawConfig cordis 传入的插件配置。
+ * @returns {object} 普通对象形式的配置。
+ */
+function normalizeConfig(rawConfig) {
+  if (rawConfig === null || rawConfig === undefined || typeof rawConfig !== 'object') return {}
+  const out = {}
+  for (const [key, value] of Object.entries(rawConfig)) out[key] = unwrapVolatile(value)
+  return out
+}
+
+// ── 技能（斜杠命令 /postman-skill） ──────────────────────────────────────────
 /** 技能名（kebab-case，作为 /postman-skill 的标识）。 */
 const SKILL_NAME = 'postman-skill'
 
@@ -174,8 +215,7 @@ function armSkill(ctx) {
 }
 
 /** 工具输出契约：单个 { text } 渲染成一个 text ContentBlock。 */
-function textOutput() {
-  return {
+function textOutput() {  return {
     schema: {
       type: 'object',
       additionalProperties: false,
@@ -660,7 +700,7 @@ module.exports = {
    * @param {object} [rawConfig] 插件配置（`config.apiKey`，来自设置页或 profile patch）。
    */
   apply(ctx, rawConfig) {
-    const pluginConfig = rawConfig && typeof rawConfig === 'object' ? rawConfig : {}
+    const pluginConfig = normalizeConfig(rawConfig)
 
     const info = (msg) => {
       try {

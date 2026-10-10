@@ -76,7 +76,34 @@ assert.strictEqual(typeof plugin.Config.toJSON, 'function', 'Config 必须是 sc
 const configJson = JSON.stringify(plugin.Config.toJSON())
 assert.ok(configJson.includes('apiKey'), 'Config 必须声明 apiKey 字段')
 assert.ok(configJson.includes('"role":"secret"'), 'apiKey 必须标 role=secret（避免明文回流浏览器）')
-console.log('   ✓ Config 导出（apiKey, role=secret）')
+// volatile 是必需的：dsh 的 settings 用 volatileForm() 过滤表单，非 volatile 的叶子字段
+// 会被丢弃，一个字段都不剩时整个条目被滤掉 —— 设置里就不会出现这一页。
+assert.ok(configJson.includes('"volatile":true'), 'apiKey 必须标 volatile，否则设置页会被过滤掉')
+console.log('   ✓ Config 导出（apiKey, role=secret, volatile）')
+
+/**
+ * 复刻 @deepseek-ai/dsh-settings 的 volatileForm（packages/settings/settings/src/schema.ts）。
+ * 它只保留 volatile 字段；返回 undefined 时该插件条目会被整个滤掉、设置里不出现这一页。
+ * 这是本轮踩过的坑，用本地复刻把回归钉住。
+ */
+function volatileForm(schema) {
+  if (schema.meta.volatile) return schema
+  if (schema.type === 'object') {
+    const dict = Object.fromEntries(
+      Object.entries(schema.dict ?? {}).flatMap(([key, child]) => {
+        const field = volatileForm(child)
+        return field === undefined ? [] : [[key, field]]
+      })
+    )
+    return Object.keys(dict).length === 0 ? undefined : { type: 'object', dict }
+  }
+  return undefined
+}
+
+const form = volatileForm(plugin.Config)
+assert.ok(form, 'volatileForm 必须返回表单（返回 undefined 会导致设置页消失）')
+assert.ok(form.dict && form.dict.apiKey, '过滤后必须仍保留 apiKey 字段')
+console.log('   ✓ volatileForm 过滤后仍保留 apiKey')
 
 console.log('\n2) apply() 执行')
 plugin.apply(fakeCtx, {})

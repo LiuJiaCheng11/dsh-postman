@@ -26,9 +26,15 @@
 
 ### Fixed
 
-- 修复插件在 dsh 设置里显示但**没有表单、无法配置**的问题：
-  根因是模块未导出 `Config`，`--dump-config-schema` 里该条目为 `unknownConfig`，
-  设置页拿不到 schema 可渲染
+- 修复插件在 dsh 设置里显示但**没有表单、无法配置**的问题。有两层原因：
+  1. 模块未导出 `Config`，`--dump-config-schema` 里该条目为 `unknownConfig`，
+     设置页拿不到 schema 可渲染；
+  2. `apiKey` 未标 **`volatile`** —— dsh 的 settings 用 `volatileForm()` 过滤表单，
+     非 volatile 的叶子字段会被丢弃，一个都不剩时**整个条目被滤掉、设置页不出现**。
+- 用 `.extra('volatile', true)` 代替 `.volatile()`：后者是 schemastery 3.18.4 才有的语法糖，
+  而运行时可能加载 3.18.1（无该方法，直接抛错）。`extra()` 两个版本都有。
+- `apply(ctx, config)` 里归一化解开 cordis 的 Volatile 包装
+  （volatile 字段拿到的是有 `.get()` 的引用对象，不是裸值）。
 
 ## [0.2.0] — 2026-10-10
 
