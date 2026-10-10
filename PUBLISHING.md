@@ -130,24 +130,32 @@ description:
 | `: ` 冒号 | 描述含 `: ` 时整行必须加引号，否则 YAML 解析失败（这是最常见的投稿翻车方式） | ✅ 无冒号 |
 | `tarball` | 可选；必须是 GitHub Release 托管的 https `.tgz` | — 未使用 |
 
-**机器检查之外的硬门槛**（CI 会拦，`check-submission.mjs`）：
+**机器会拦的**（`check-submission.mjs`，全在 CI 里跑）：
 
 1. **`package.json` 必须声明 `dsh.bundle`** —— 只声明 `dsh.client` 会被拒（这是官方文档点名的头号被拒原因）。
    我们两样都有，`dsh.bundle.patch` 指向 `./cordis.patch.yml`。✅
 2. **仓库必须创建满 1 天**（`MIN_AGE_DAYS = 1`，按 `created_at` 算，没有提交数门槛）。
-   ⚠️ **我们的仓库创建于 2026-10-10T08:54:25Z，当时还不满 1 天。**
+   ⚠️ **我们的仓库创建于 2026-10-10T08:54:25Z，提 PR 时还不满 1 天。**
    但这**不是让你等一天再提**——官方 `regate.yml` 每 6 小时自动重跑一次被年龄卡住的 PR，
    gate 自己的报错文案就写着「this check re-runs by itself… No need to resubmit, push, or close and reopen」。
    所以**直接提 PR 即可**，年龄那关会在仓库满 1 天后（约 2026-10-11 16:54 GMT+8）自己转绿，不需要重开。
-3. **仓库存在且未归档** ✅ 4. **不是 DSH 本体** ✅
+3. **一个 PR 最多加 3 条**（`MAX_ENTRIES_PER_PR = 3`，超了直接拒并要求拆）。我们只加 1 条。✅
+4. **仓库存在、未归档、不是 DSH 本体** ✅
+
+**人工评审会看的**（**不**在 CI 里，但 PR 模板会要求你逐条自查）：
+
 5. **仓库要打 `dsh-plugin` topic** —— ⚠️ **当前 topics 是空的，必须补上**。
-   去 https://github.com/LiuJiaCheng11/dsh-postman 点 About 右侧齿轮，加 `dsh-plugin`（顺带 `postman` `deepseek-harness`）。
+   去 https://github.com/LiuJiaCheng11/dsh-postman 点 About 面板右上角的**齿轮**，
+   在弹出的 Edit repository metadata 对话框里，Topics 一行输入 `dsh-plugin` 回车，
+   顺带加 `postman` `deepseek-harness`，然后点 Save changes。
 6. **描述必须属实**，会被逐句对照代码核。所以描述里的「9 个工具」必须真有 9 个，
    提到的能力必须在代码里找得到——`postman_list/tree/add/rm/edit/pull/push/scan/config` 正好 9 个。
    ⚠️ 之前写的是「Zero dependencies / 零依赖」，但 `package.json` 里有
    `@deepseek-ai/schemastery`，**和本仓库 README 第 12 行的说法也自相矛盾**，属于会被打回的夸大，已删掉。
 7. **不与其他条目重复**。列表里已有 `zhousun55-byte__dsh-postman.yml`，但那是**别人的文件上传插件**
    （category `ui`，路由 `/dsh-postman/upload`），与我们的 url、name、功能都不同，**不构成重复**。
+8. **只动自己那一条**。更新条目时不要顺手改别人的描述——gate 会列出 PR 修改的每一个既有条目，
+   被发现就是打回。也不要手工编辑 README。
 
 ### 步骤
 
