@@ -125,7 +125,13 @@ cd E:/Code/DshPlugins/dsh-postman
 npm run check        # node --check 四个源文件
 node test/smoke.js   # 插件装配 + 工具注册 + 路由
 node test/scanner.js # 扫描器单测
+npm run test:real    # 真启动一个 dsh web 实例，验证插件能加载且不崩
 ```
+
+> `test:real` 会在空闲端口（默认 3099）拉起一个真实 dsh 实例，探测
+> `/dsh-postman` 是否返回 200，并检查启动日志里有无 `unsupported JSON schema`
+> 之类的致命错误。**改完工具 schema 一定要跑它**——`--dump-config` 只组合 YAML、
+> 不 import 插件，测不出这类问题。
 
 ## 实测数据
 

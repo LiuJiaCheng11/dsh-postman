@@ -40,6 +40,7 @@
   "scripts": {
     "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/route-scanner.js && node --check src/page.js",
     "test": "node test/smoke.js && node test/scanner.js",
+    "test:real": "bash test/realstart.sh",
     "prepublishOnly": "npm run check && npm test"
   },
   "publishConfig": {
