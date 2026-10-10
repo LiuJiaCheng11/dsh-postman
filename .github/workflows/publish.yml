@@ -1,0 +1,34 @@
+name: publish
+
+# 打 tag 即发布到 npm：git tag v0.2.0 && git push --tags
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # 用于 npm provenance 签名
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # 只跑不依赖外部服务的检查：
+      # test/smoke.js 会真实调用 Postman API，CI 里没有 Key，故不跑。
+      - name: 语法检查
+        run: npm run check
+
+      - name: 扫描器单测
+        run: node test/scanner.js
+
+      - name: 发布
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

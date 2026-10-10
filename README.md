@@ -108,6 +108,10 @@ http://127.0.0.1:3080/dsh-postman
 dsh-postman/
   package.json          # 声明 dsh.bundle.patch
   cordis.patch.yml      # 插件装配补丁（insert 一行）
+  README.md
+  CHANGELOG.md
+  PUBLISHING.md         # 发布指南（GitHub / npm / 插件市场）
+  LICENSE
   src/
     index.js            # 插件入口：注册工具 + 配置页
     postman-api.js      # Postman API 客户端（零依赖）
@@ -116,6 +120,11 @@ dsh-postman/
   test/
     smoke.js            # 冒烟测试（假 ctx 加载 + 真实 list 调用）
     scanner.js          # 扫描器单测（内联 fixture，5 组断言）
+    realstart.sh        # 真启动验证（起实例 + 探路由 + 查致命报错）
+  scripts/
+    setup-publish.sh    # 一键填仓库地址 + 生成市场投稿文件
+  .github/workflows/
+    publish.yml         # 打 tag 自动发 npm
 ```
 
 ## 开发
@@ -145,3 +154,14 @@ npm run test:real    # 真启动一个 dsh web 实例，验证插件能加载且
 
 三根合计约 5000 条路由。与 Postman 内 App 集合（518 请求）比对，覆盖率 **73.6%**（381/518）；
 未匹配的多为第三方服务（如 `/wv/wordviewer/request.pdf`、`/docs/api/local/...`）或已变更接口。
+
+## 发布
+
+要推到 GitHub / 发 npm / 上架 dsh 插件市场，见 **[PUBLISHING.md](./PUBLISHING.md)**。
+最快路径：
+
+```sh
+bash scripts/setup-publish.sh 你的GitHub用户名   # 填仓库地址 + 生成市场投稿文件
+```
+
+之后按脚本提示做四步即可。变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
