@@ -1,8 +1,15 @@
 'use strict'
 
 /**
- * 设置页回归测试 —— 直接复刻 dsh **已构建产物**里的表单投影逻辑，验证插件导出的
- * `Config` 真的能通过 dsh 的过滤，在「设置」里留下一页。
+ * 设置命名空间回归测试 —— 直接复刻 dsh **已构建产物**里的表单投影逻辑，验证插件导出的
+ * `Config` 真的能通过 dsh 的过滤，让 `dsh-postman` 进入 `settings.describe()`。
+ *
+ * 它能证明什么、不能证明什么（容易搞混，写清楚）：
+ *   ✅ 能证明：命名空间带真实 schema 出现在 `describe()` 里，字段是 apiKey（secret + volatile）。
+ *      这是「插件管理页里能渲染配置表单」与「客户端那一页能绑上值」的前提。
+ *   ❌ 不能证明：设置导航里会出现一行。Web 客户端的设置导航行**只**来自客户端注册的
+ *      `settings.section`（见 `client/client.js` 与 `test/client-bundle.js`）；
+ *      宿主侧的 `autoGenerate` 字段在 Web 客户端没有任何消费方。
  *
  * 为什么不能只测 `Config.toJSON()`：
  *   dsh 的 `SettingsForms.describe()` 对每个 profile 条目做
@@ -186,7 +193,11 @@ check('Config 能解析默认值与用户值', () => {
 
 console.log('')
 if (failures === 0) {
-  console.log('设置页校验通过：dsh 会在「设置」里为 dsh-postman 生成一页，字段为 apiKey（secret + volatile）。')
+  console.log('设置页校验通过：dsh-postman 命名空间会进入 settings.describe()，字段为 apiKey（secret + volatile）。')
+  console.log('')
+  console.log('注意：这只保证命名空间「有 schema 可渲染」，不等于设置里会出现导航行 ——')
+  console.log('      Web 客户端的设置导航行只来自客户端注册的 settings.section（见 client/client.js），')
+  console.log('      宿主侧的 autoGenerate 字段在 Web 客户端没有任何消费方。')
   process.exit(0)
 } else {
   console.log(`设置页校验失败：${failures} 项未通过。`)

@@ -3,6 +3,40 @@
 本文件记录 dsh-postman 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.0] — 2026-10-10
+
+### Added
+
+- **客户端半边 `client/client.js`**：「设置 → Postman」终于真的出现在设置里。
+  注册 id 为 `postman` 的 `settings.section`，页面直接编辑 `dsh-postman` 命名空间的
+  `apiKey`（密码框 + 已配置/未配置状态 + 保存/清除）。
+  - 接线：`package.json` 的 `dsh.client`（`platform: 'web'` + `inject`）与 `exports["./client"]`；
+    宿主经 `/plugins` 把该文件发给浏览器。
+  - **手写 JS，不引入构建步骤**：用 `window.__ModuleLoader__.load({ id, factory })` 包装，
+    只 `require("react")`（宿主提供），不需要 UI 库依赖。
+  - 「Key 是否已配置」读 `describe()` 视图的 `secrets`（`SettingsNamespaceView.secrets = [{path,set}]`）——
+    `configForms.get()` 的快照里**没有** secrets，只能从镜像视图取。
+  - 用 `configForms.whileServed(['dsh-postman'], …)` 包住注册：命名空间没被服务时不留痕迹。
+- `test/client-bundle.js`：假浏览器 + 假 React 加载 `client/client.js`，验证 bundle id、
+  `settings.section` 注册契约、两种状态下渲染、以及 set/unset 写入路径（9 项断言）。
+- `test/client-served.sh`：**真启动**，从 index.html 的启动图里读出本插件的 bundle 地址
+  再取回来校验包装/注册 id/`settings.section`。两个运行时的 URL 格式不同，两种都认。
+
+### Changed
+
+- `README` 的「设置页是怎么来的」重写：把「导出 `Config` 就会有设置页」这个**错误结论**纠正掉。
+
+### Fixed
+
+- **纠正 0.3.0/0.3.1 的核心误判**：导出 `Config` + 标 `volatile` 只让命名空间进入
+  `settings.describe()`，**不会**让设置里出现一行。Web 客户端的设置导航行**只**来自
+  客户端注册的 `settings.section` 槽位（`ui-settings-general` 的 nav 投影就是
+  `ctx.slots.entries('settings.section')`）；宿主侧那个 `autoGenerate` 字段
+  （注释写着「Generate a page if no custom page is registered for this instance」）
+  在 Web 客户端**没有任何消费方**，所以自动派生的页面在 Web 上不存在。
+  这也解释了为什么第三方插件（dshmarket、dsh-vision-router）都自带客户端 bundle。
+- `test/settings-page.js` 的结论文案与文件头注释同步纠正（说明它能证明什么、不能证明什么）。
+
 ## [0.3.1] — 2026-10-10
 
 ### Added
