@@ -100,44 +100,95 @@ npm view dsh-postman dsh
 市场的插件列表来自精选仓库 **[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)**。
 **不要去 dsh-market 仓库提插件**（那是市场应用本体）。
 
-### 投稿格式（已核对官方 contributing.md）
+### 投稿格式（已核对官方校验器源码，非猜测）
 
 **一次投稿 = 新增一个文件**，路径 `data/plugins/<owner>__<repo>.yml`（owner 与 repo 之间是**双下划线**）。
-例如 `data/plugins/你的用户名__dsh-postman.yml`：
+本仓库已经把这份文件生成好了，就在 [`marketplace/LiuJiaCheng11__dsh-postman.yml`](marketplace/LiuJiaCheng11__dsh-postman.yml)：
 
 ```yaml
-url: https://github.com/你的用户名/dsh-postman   # 必须与仓库完全一致
-name: 你的用户名/dsh-postman                     # 列表里显示的链接文字
-category: tools                                 # 工具类插件
+url: https://github.com/LiuJiaCheng11/dsh-postman
+name: LiuJiaCheng11/dsh-postman
+category: tools
 description:
-  en: Manage Postman cloud collections from dsh, and scan ASP.NET Core controllers to sync API routes into a collection.
-  zh: 在 dsh 里管理 Postman 云端集合，并可扫描 ASP.NET Core 控制器把接口批量同步进集合。
+  en: Manage Postman cloud collections from dsh with 9 tools — list, browse, add, edit and delete requests, export or overwrite a whole collection, and scan ASP.NET Core controllers to sync their routes into a collection.
+  zh: 用 9 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增、修改、删除接口，导出或整体覆盖集合，并可扫描 ASP.NET Core 控制器把路由同步进集合。
 ```
 
-规则要点：
+以下规则来自官方 CI 校验器 [`scripts/lib/entries.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/lib/entries.mjs)
+的 `validateEntries()` 与 [`scripts/check-submission.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/check-submission.mjs)，
+是**逐条对照源码**得出的，不是从 contributing.md 复述的：
 
-- **只有 `description.en` 是必填**；`zh` 写不了可以不写，维护者会补。
-- 描述**必须以句号结尾**；含 `: `（英文冒号+空格）时**必须给整行加引号**，否则 YAML 解析失败。
-- **绝对不要手写 `npm:` 键**——npm 映射由系统从 registry 自动采集，手写会被校验拒绝。
-- 不要手写 `stars` / `downloads` / `install` / `screenshots`，全是自动生成的。
-- `category` 可选值：`agi` `ui` `usage` `theme` `model` `identity` `session` `memory`
-  **`tools`** `wsl` `browser` `vision` `voice` `docs` `skill` `workflow` `git` `notify`
-  `dev` `security` `remote` `market` `fun`
-- **两个 README 由脚本生成，不要手改。**
+| 检查 | 规则 | 我们的状态 |
+|---|---|---|
+| 字段白名单 | 只允许 `url` `name` `category` `description` `tarball`，**出现任何其他键直接拒**（`npm:` / `stars:` 都算） | ✅ 只用了前四个 |
+| 文件名 | 必须等于 `slugFor(url)`，即 `LiuJiaCheng11__dsh-postman.yml` | ✅ |
+| `name` 与 `url` | 若 `name` 含 `/`，则必须与 url 的 `owner/repo` 一致（大小写不敏感） | ✅ |
+| `category` | 必须在 23 个白名单值内 | ✅ `tools` |
+| `description.en` | 必填、非空、**必须单行**（不能含换行） | ✅ |
+| `description.zh` | 可以省略；但写了就不能为空 | ✅ |
+| 其他 locale | `ja` 之类会被拒——站点只渲染 en/zh | ✅ 只有 en/zh |
+| `: ` 冒号 | 描述含 `: ` 时整行必须加引号，否则 YAML 解析失败（这是最常见的投稿翻车方式） | ✅ 无冒号 |
+| `tarball` | 可选；必须是 GitHub Release 托管的 https `.tgz` | — 未使用 |
+
+**机器检查之外的硬门槛**（CI 会拦，`check-submission.mjs`）：
+
+1. **`package.json` 必须声明 `dsh.bundle`** —— 只声明 `dsh.client` 会被拒（这是官方文档点名的头号被拒原因）。
+   我们两样都有，`dsh.bundle.patch` 指向 `./cordis.patch.yml`。✅
+2. **仓库必须创建满 1 天**（`MIN_AGE_DAYS = 1`，按 `created_at` 算，没有提交数门槛）。
+   ⚠️ **我们的仓库创建于 2026-10-10T08:54:25Z，当时还不满 1 天。**
+   但这**不是让你等一天再提**——官方 `regate.yml` 每 6 小时自动重跑一次被年龄卡住的 PR，
+   gate 自己的报错文案就写着「this check re-runs by itself… No need to resubmit, push, or close and reopen」。
+   所以**直接提 PR 即可**，年龄那关会在仓库满 1 天后（约 2026-10-11 16:54 GMT+8）自己转绿，不需要重开。
+3. **仓库存在且未归档** ✅ 4. **不是 DSH 本体** ✅
+5. **仓库要打 `dsh-plugin` topic** —— ⚠️ **当前 topics 是空的，必须补上**。
+   去 https://github.com/LiuJiaCheng11/dsh-postman 点 About 右侧齿轮，加 `dsh-plugin`（顺带 `postman` `deepseek-harness`）。
+6. **描述必须属实**，会被逐句对照代码核。所以描述里的「9 个工具」必须真有 9 个，
+   提到的能力必须在代码里找得到——`postman_list/tree/add/rm/edit/pull/push/scan/config` 正好 9 个。
+   ⚠️ 之前写的是「Zero dependencies / 零依赖」，但 `package.json` 里有
+   `@deepseek-ai/schemastery`，**和本仓库 README 第 12 行的说法也自相矛盾**，属于会被打回的夸大，已删掉。
+7. **不与其他条目重复**。列表里已有 `zhousun55-byte__dsh-postman.yml`，但那是**别人的文件上传插件**
+   （category `ui`，路由 `/dsh-postman/upload`），与我们的 url、name、功能都不同，**不构成重复**。
 
 ### 步骤
 
-1. Fork [github.com/awesome-dsh-plugin/awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
-2. 在 `data/plugins/` 下新增 `你的用户名__dsh-postman.yml`（内容见上）
-3. 提 PR，说明这是一个 dsh 工具类插件
-4. 合并后站点 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 与
-   `dshmarket` 面板会自动收录，**通常一天内生效**
+```sh
+# 0. 先确保改动都推上去了（CI 读的是 GitHub 上的 package.json，不是本地的）
+git push
 
-> 本仓库的 `scripts/setup-publish.sh` 会自动生成这个 yml 文件到 `marketplace/` 下，直接复制过去即可。
+# 1. 本地彩排：把官方校验规则过一遍（需先 npm i -D js-yaml）
+npm run check:marketplace
 
-收录后，别人就能在 dsh 的 **设置 → 插件市场** 里搜到并一键安装。
+# 2. Fork 官方列表仓库，然后（在 fork 里）：
+mkdir -p data/plugins
+cp <本仓库>/marketplace/LiuJiaCheng11__dsh-postman.yml data/plugins/
+git add data/plugins/LiuJiaCheng11__dsh-postman.yml
+git commit -m "Add LiuJiaCheng11/dsh-postman"
+git push
+```
 
-> 收录不等于背书。市场文档原话：「插件是第三方代码，请只安装你信任的来源。」
+3. 回 GitHub 提 PR，**按 `.github/pull_request_template.md` 的清单逐项自查**（六条勾选框）。
+   一个 PR 最多加 3 条，我们只加 1 条。**只加文件，不要手工改 README**（README 由 `main` 上自动重新生成）。
+4. CI 跑完后：年龄那关可能是红的——**不用管，也别重开 PR**，`regate.yml` 会在 6 小时内自动重跑。
+   其他检查若报错，会在 PR 评论里写明改什么，在**同一分支**推修复即可，无需重开。
+5. 合并后站点 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 与 `dshmarket` 面板自动收录。
+
+> **维护者会实际读仓库。** 评审看的六件事里包括「代码是否与描述一致」「是否真实可用」「源码有无可疑之处」。
+> 所以推之前记得确认远端 `package.json` 的 `repository` 不是占位符——本地已改成 `LiuJiaCheng11`，
+> 但那笔提交（`42530c4`）**当时还没推**，远端读到的仍是 `USERNAME`。
+
+### 可选但推荐（不是门槛）
+
+- **发 npm 包**：预构建安装免 `allowBuilds` 授权，用户一条命令装好；市场还能显示下载量。
+  关联条件是**已发布包的 `repository` 字段指回本仓库**（我们已指向，但见上面那条「还没推」的提醒）。
+  不需要通知维护者，映射自动从 registry 采集。
+- **官方 `@deepseek-ai/*` 包用 `peerDependencies` 而非 `dependencies`**，避免 profile 里出现重复运行时。
+  我们目前把 `@deepseek-ai/schemastery` 放在 `dependencies`——**这是有意的**：
+  `src/schemastery.js` 从 profile 的 `node_modules` 里软加载它，改成 peer 依赖后 pnpm 会把这份从 profile 移除，
+  「设置 → postman」的表单会消失（代码能降级，但功能少一块）。收益不足，暂不改。
+- **截图**：在自己仓库的 `package.json` 旁放 `screenshots.json` 列出 1–8 张图，
+  市场详情页就能像 App Store 一样展示；以后换图推自己仓库即可，不用再提 PR。不声明也行（会从 README 抽图）。
+- **预构建 tarball**：不发 npm 的话，把 `.tgz` 挂到 GitHub Release，用 `tarball:` 字段指向它。
+  注意 `latest/download/` 的文件名是照字面取的——资产名带版本号的话，下次发版就会 404。
 
 ---
 
@@ -184,9 +235,14 @@ dsh plugin --profile web add E:/Code/DshPlugins/dsh-postman
 ## 发版检查清单
 
 - [x] `package.json` 三处 `USERNAME` 已替换 → `github.com/LiuJiaCheng11/dsh-postman`
+      ⚠️ 但该修复在 `42530c4`，**当时尚未推**——CI 与维护者读到的仍是 `USERNAME`，推之前先确认
 - [x] 仓库已推送 → `git@github.com:LiuJiaCheng11/dsh-postman.git`
 - [x] 市场投稿文件已生成 → `marketplace/LiuJiaCheng11__dsh-postman.yml`
 - [x] GitHub 形式的安装命令已实测通过（`dsh plugin --profile web add github:LiuJiaCheng11/dsh-postman`）
+- [x] 市场条目已按官方校验器规则本地彩排通过 → `npm run check:marketplace`
+- [x] `dsh.bundle` manifest 已声明（CI 第 2 关）
+- [ ] **`git push`**（`42530c4` 还领先 origin/main 一个提交）
+- [ ] **给仓库打 `dsh-plugin` topic**（当前 topics 为空，PR 模板里有这一项自查）
 - [ ] **npm 包名再确认一次**（同名 `zhousun55-byte/dsh-postman` 存在，见第 2 节）
 - [ ] `version` 已递增（npm 不允许覆盖已发布版本）
 - [ ] `CHANGELOG.md` 已补本次变更
@@ -196,4 +252,5 @@ dsh plugin --profile web add E:/Code/DshPlugins/dsh-postman
 - [ ] `git tag vX.Y.Z` 并推送
 - [ ] GitHub Release 写清变更（市场会用它当「更新内容」）
 - [ ] 市场投稿文件 `marketplace/LiuJiaCheng11__dsh-postman.yml` 已提 PR
+      （仓库年龄那关会先红，`regate.yml` 6 小时内自动重跑转绿，不用重开 PR）
 - [ ] README 里的安装命令与实际包名一致

@@ -63,6 +63,26 @@
   ——原来的写法会误判为「2 秒就绪」。
 - 四个真启动脚本里 `HERE="$(cd … && pwd -W … || cd … && pwd)"` 的运算符结合性 bug
   （实际按 `(A || B) && C` 解析，会多输出一行路径，导致 `source` 找不到文件）。
+- **市场投稿描述里的「Zero dependencies / 零依赖」删掉了。** 官方收录规则明确写着
+  「描述会被当作出题来核对代码，夸大是让一个本来不错的插件被打回的主要原因」，
+  而 `package.json` 里有 `@deepseek-ai/schemastery`，本仓库 README 第 12 行写的也是
+  「只依赖 `@deepseek-ai/schemastery`」——三者互相矛盾。现在描述只讲功能，不含依赖声明。
+
+### 投稿准备（对照官方校验器源码逐条核对，非复述 contributing.md）
+
+- `marketplace/LiuJiaCheng11__dsh-postman.yml`：`category: tools`，
+  `name` 与 `url` 同名，字段只用了白名单内的 `url`/`name`/`category`/`description`。
+- 新增 `npm run check:marketplace`（`test/marketplace-entry.js`）：把官方
+  `scripts/lib/entries.mjs` 的 `validateEntries()` 规则本地跑一遍——字段白名单、
+  文件名 slug、`name`/`url` 一致性、category 白名单、`description.en` 必填且单行、
+  不允许额外 locale、`: ` 冒号检查；另外附带检查 `dsh.bundle` 与 `repository` 占位符。
+  需要 `js-yaml`，所以**不挂在 `npm test` 里**（测试套件保持零依赖），缺库时打印 SKIP 退出。
+- 查清了两个会拦 PR 的真实门槛：
+  1. **仓库需创建满 1 天**（`MIN_AGE_DAYS = 1`）。本仓库 `created_at = 2026-10-10T08:54:25Z`，
+     提交时必然先红——但官方 `regate.yml` 每 6 小时自动重跑被年龄卡住的 PR，
+     gate 报错文案本身就说「No need to resubmit, push, or close and reopen」，
+     所以**照常提 PR 即可，会自己转绿**。
+  2. **仓库必须打 `dsh-plugin` topic**——当前 topics 为空，待补。
 
 ### 实测（本轮依据）
 

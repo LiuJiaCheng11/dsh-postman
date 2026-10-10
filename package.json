@@ -53,6 +53,7 @@
     "test": "node test/smoke.js && node test/api-base.js && node test/edit-and-tree.js && node test/scanner.js && node test/settings-page.js && node test/client-bundle.js",
     "test:real": "bash test/realstart.sh 3099 && bash test/client-served.sh 3098",
     "test:client": "bash test/client-served.sh 3097",
+    "check:marketplace": "node test/marketplace-entry.js",
     "prepublishOnly": "npm run check && npm test"
   },
   "dependencies": {
