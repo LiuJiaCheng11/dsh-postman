@@ -1,0 +1,57 @@
+{
+  "name": "dsh-postman",
+  "version": "0.1.0",
+  "description": "dsh 插件 · Postman 云端集合管理：列出/查看/新增/删除接口，内置配置页填写 Postman API Key。零外部依赖。",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./postman-api": "./src/postman-api.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "dsh-plugin",
+    "postman",
+    "api",
+    "collection",
+    "api-testing"
+  ],
+  "engines": {
+    "node": ">=22.5",
+    "dsh": ">=0.1.1-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/page.js",
+    "test": "node test/smoke.js",
+    "prepublishOnly": "npm run check && npm test"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/USERNAME/dsh-postman.git"
+  },
+  "homepage": "https://github.com/USERNAME/dsh-postman#readme",
+  "bugs": {
+    "url": "https://github.com/USERNAME/dsh-postman/issues"
+  }
+}

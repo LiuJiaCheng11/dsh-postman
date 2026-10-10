@@ -1,0 +1,20 @@
+# dsh-postman bundle patch: contributes this plugin row into the host
+# composition when the package is installed via `dsh plugin --profile web add`.
+#
+# HOST-PLANE plugin: it reads host services (tools, webServer, connection) and
+# registers model-facing `postman_*` tools plus a small HTTP config page for the
+# Postman API Key. It must therefore land in the host composition (this insert),
+# never inside an agent preset.
+#
+# `name` must be the package's real name — the loader imports this specifier.
+#
+# The API Key may be supplied here (or via the POSTMAN_API_KEY env var); when
+# left empty the plugin falls back to its own settings file written by the
+# config page (~/.dsh/dsh-postman/config.json), then to the legacy
+# ~/.postman_api_key file.
+
+- insert:
+    - id: dsh-postman
+      name: 'dsh-postman'
+      config:
+        apiKey: !!js process.env.POSTMAN_API_KEY
