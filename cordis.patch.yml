@@ -16,6 +16,11 @@
 #
 # Fallback order when that field is empty (handled in src/postman-api.js):
 #   ~/.dsh/dsh-postman/config.json  →  ~/.postman_api_key  →  POSTMAN_API_KEY env
+#
+# The API endpoint is `https://api.getpostman.com` (global default). The browser
+# URL `<team>.postman.co` is unrelated — it is the team's `teamDomain` and only
+# decides which team's UI the browser opens. The one real exception is Enterprise
+# EU data residency (`api.eu.postman.com`); override it with POSTMAN_API_BASE.
 
 - insert:
     - id: dsh-postman

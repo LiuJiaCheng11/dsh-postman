@@ -27,6 +27,15 @@
   以及**一条反向对照用例**：真跑一遍 `rm` + `add`，证明 `event` / `response` /
   `description` 确实会永久消失。
 - `test/_runtime.sh`：三个真启动脚本共用的运行时选择 / 起实例 / 取 token。
+- **API 端点的逃生口：环境变量 `POSTMAN_API_BASE`**（默认仍是 `https://api.getpostman.com`）。
+  起因是确认「浏览器里的 `<团队名>.postman.co` 地址要不要做成配置项」—— 结论是**不要**：
+  那是每个团队都有的 `teamDomain`（团队名的 slug，`GET /me` 可见），只决定网页入口；
+  API 按 Key 认证、按账号返回数据，端点全局统一。唯一例外是 **Enterprise 的 EU 数据驻留**
+  （`api.eu.postman.com`，需联系销售购买），为它留了这个不改代码的口子。
+  `postman_config status` 与 `/dsh-postman/api/config` 现在都会报出当前端点。
+- `test/api-base.js`：6 项断言。默认值、覆盖生效、尾部斜杠归一、空值回退，
+  以及一条**真实请求验证**（把端点指到 `127.0.0.1:1`，确认 `call()` 走的是 `resolveBase()`
+  而不是那个常量）。
 
 ### Changed
 

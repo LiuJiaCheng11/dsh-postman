@@ -827,8 +827,13 @@ const TOOL_SPECS = [
       }
       const info = deps.resolveKey()
       if (!info.key) return { text: '尚未配置 Postman API Key。' }
+      const base = api.resolveBase()
+      const baseNote = base === api.DEFAULT_BASE ? '（默认）' : '（POSTMAN_API_BASE 覆盖）'
       return {
-        text: `已配置：${api.maskKey(info.key)}\n来源：${info.source}` + (info.file ? `\n文件：${info.file}` : ''),
+        text:
+          `已配置：${api.maskKey(info.key)}\n来源：${info.source}` +
+          (info.file ? `\n文件：${info.file}` : '') +
+          `\n端点：${base}${baseNote}`,
       }
     },
   },
@@ -964,6 +969,8 @@ module.exports = {
                   source: current.source,
                   file: current.file || api.CONFIG_FILE,
                   configFile: api.CONFIG_FILE,
+                  base: api.resolveBase(),
+                  baseIsDefault: api.resolveBase() === api.DEFAULT_BASE,
                 })
                 return
               }

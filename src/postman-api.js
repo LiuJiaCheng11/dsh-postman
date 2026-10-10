@@ -20,7 +20,30 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const BASE = 'https://api.getpostman.com'
+/**
+ * Postman API 的默认端点。
+ *
+ * 浏览器里那个 `<团队名>.postman.co` 地址**与 API 无关** —— 它是 Postman 给每个团队
+ * 自动生成的 `teamDomain`（团队名的 slug），只决定浏览器打开哪个团队的界面。
+ * API 按 API Key 认证、按账号返回数据，端点全局统一。
+ *
+ * 唯一例外是 **Enterprise 的 EU 数据驻留**：那种账号的 Postman API 在
+ * `api.eu.postman.com`（官方文档：*The Postman API uses the `api.eu.postman.com`
+ * subdomain*），且部分端点不可用。为它保留一个不改代码的逃生口：环境变量
+ * `POSTMAN_API_BASE`（例如 `https://api.eu.postman.com`）。
+ */
+const DEFAULT_BASE = 'https://api.getpostman.com'
+
+/** 解析当前要用的 API 端点（每次调用都读，便于测试与临时切换）。 */
+function resolveBase() {
+  const raw = process.env.POSTMAN_API_BASE
+  if (typeof raw === 'string' && raw.trim() !== '') return raw.trim().replace(/\/+$/, '')
+  return DEFAULT_BASE
+}
+
+/** 默认端点常量（导出供文档/探测脚本引用；实际请求请用 resolveBase()）。 */
+const BASE = DEFAULT_BASE
+
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
 const CONFIG_DIR = path.join(DSH_HOME, 'dsh-postman')
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
@@ -138,7 +161,7 @@ async function call(method, apiPath, key, body) {
   }
   let res
   try {
-    res = await fetch(BASE + apiPath, init)
+    res = await fetch(resolveBase() + apiPath, init)
   } catch (error) {
     throw new PostmanError(`请求 Postman API 失败：${error && error.message ? error.message : String(error)}`, 'network')
   }
@@ -351,6 +374,8 @@ function listFolderNames(items) {
 module.exports = {
   PostmanError,
   BASE,
+  DEFAULT_BASE,
+  resolveBase,
   CONFIG_FILE,
   LEGACY_KEY_FILE,
   BACKUP_DIR,

@@ -235,6 +235,34 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 | `postman_edit` 改请求头是**整份替换**，不是按 key 合并 | 保持语义简单、可预期 | 要保留原有 header 就把它们一并写进 `headers` |
 | `postman_edit` 按**名称**定位，重名时只改第一个匹配 | 名称是唯一对模型友好的标识 | 集合里避免同名请求；必要时先用 `postman_tree` 确认 |
 | `postman_scan` 只认 ASP.NET Core 的约定路由 | 扫描器按 C# 特性/模板解析 | 其它框架先 `postman_pull` 导出，本地改完 `postman_push` |
+| API 端点默认是 `https://api.getpostman.com` | 这是 Postman 的全局默认端点 | 只有 **Enterprise 的 EU 数据驻留**需要换 —— 用环境变量 `POSTMAN_API_BASE`，见下方说明 |
+
+### 关于 API 端点（为什么不做成配置项）
+
+浏览器里那个 `<团队名>.postman.co` 地址**不影响 API**：它是 Postman 给每个团队自动生成的
+`teamDomain`（团队名的 slug，`GET /me` 里就能看到），只决定浏览器打开哪个团队的界面。
+API 走的是 `https://api.getpostman.com`，用 API Key 认证，按**账号**返回数据 ——
+同一个 Key 直接就能拿到该账号下的全部集合，和团队域名无关。
+
+唯一真正会换端点的情况是 **Postman Enterprise 的 EU 数据驻留**
+（[官方文档](https://learning.postman.com/docs/administration/enterprise/about-eu-data-residency/)：
+*The Postman API uses the `api.eu.postman.com` subdomain*），需要联系 Postman 销售购买、
+仅企业版可用，且部分端点不可用。普通/团队/企业（US）账号一律用默认端点。
+
+所以这里**没有做 UI 配置项**：为极少数 EU 企业用户加一个设置字段，成本大于收益。
+但留了一个**不改代码的逃生口** —— 环境变量 `POSTMAN_API_BASE`：
+
+```sh
+POSTMAN_API_BASE=https://api.eu.postman.com dsh web
+```
+
+`postman_config({ action: "status" })` 会把这行直接打出来，你能一眼确认当前用的是哪个端点：
+
+```text
+已配置：PMAK-650…4d18
+来源：历史文件 ~/.postman_api_key
+端点：https://api.getpostman.com（默认）
+```
 
 > 0.4.1 及以前有两条限制（`postman_tree` 输出过长会被静默截断、没有「编辑」动作只能
 > 先删再加）已在 **0.5.0** 解决：前者改为带 `path` / `limit` 且截断时显式提示，
