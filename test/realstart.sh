@@ -1,54 +1,68 @@
 #!/usr/bin/env bash
-# 真启动验证：在空闲端口起一个 dsh web 实例，确认 dsh-postman 插件能加载且不崩。
+# 真启动验证：在空闲端口起一个 dsh web 实例，确认 dsh-postman 插件能加载、不崩，
+# 且路由（含客户端 bundle）都被宿主接上。
+#
 # 用法： bash test/realstart.sh [port]
-# 环境变量 DSH 可覆盖运行时入口（默认已安装版；源码版见下方注释）。
+#
+# 默认跑**源码仓库那份 0.2.0-rc.2**（用户真实在跑的运行时）。
+# 覆盖方式见 test/_runtime.sh 顶部注释，例如：
+#   DSH="C:/Users/ljc/.dsh/dsh-browser/node_modules/@deepseek-ai/dsh/lib/bin.js" bash test/realstart.sh
 set -u
+
+HERE="$(cd "$(dirname "$0")" && pwd -W 2>/dev/null)"
+[ -n "$HERE" ] || HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=./_runtime.sh
+source "$HERE/_runtime.sh"
+
 PORT="${1:-3099}"
-# 默认用「已安装运行时」；想测源码仓库版：
-#   DSH="E:/software/deepseek-harness/apps/cli/lib/bin.js" bash test/realstart.sh
-DSH="${DSH:-C:/Users/ljc/.dsh/dsh-browser/node_modules/@deepseek-ai/dsh/lib/bin.js}"
-OUT="/tmp/dsh-postman-realstart.log"
-: > "$OUT"
+runtime_resolve || exit 1
+TMP="$(runtime_dir)"
+OUT="$TMP/realstart-$PORT.log"
+JAR="$TMP/realstart-$PORT.jar"
+INDEX="$TMP/realstart-$PORT.html"
+: > "$JAR"
 
 echo "== 启动 dsh web (port=$PORT) =="
-echo "   runtime = $DSH"
-env -u NODE_OPTIONS -u CODEBUDDY_MCP_CONFIG \
-  node "$DSH" web --port "$PORT" --no-open > "$OUT" 2>&1 &
-PID=$!
-echo "pid=$PID"
+echo "   运行时 = $RT_DESC"
+PID=$(start_dsh "$PORT" "$OUT")
+echo "   pid=$PID"
+READY=$(wait_for_port "$PID" "$PORT" "$OUT")
 
-# 轮询等待端口就绪（最多 40s）
-READY=0
-for i in $(seq 1 40); do
-  sleep 1
-  if ! kill -0 "$PID" 2>/dev/null; then
-    echo "!! 进程在 ${i}s 时退出"
-    break
-  fi
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' --max-time 3 "http://127.0.0.1:$PORT/" 2>/dev/null)
-  if [ "$CODE" != "000" ]; then READY=1; echo "端口就绪于 ${i}s (HTTP $CODE)"; break; fi
-done
+TOKEN=$(read_token "$OUT")
+echo "   token=${TOKEN:0:8}..."
 
-# 从启动日志里取访问 token
-TOKEN=$(sed -n 's/.*token=\([A-Za-z0-9_-]*\).*/\1/p' "$OUT" | head -1)
-echo "token=${TOKEN:0:8}..."
-
-echo "== 启动日志（尾部 40 行）=="
-tail -40 "$OUT"
+echo "== 启动日志（尾部 30 行）=="
+tail -30 "$OUT"
 
 echo "== 路由探测（带 token + cookie）=="
-JAR="/tmp/dsh-postman-cookies.txt"
-: > "$JAR"
-# 先访问 /?token=... 让实例下发会话 cookie
-curl -s -c "$JAR" -b "$JAR" -o /dev/null --noproxy '*' --max-time 5 \
+curl -sL -c "$JAR" -b "$JAR" -o "$INDEX" --noproxy '*' --max-time 8 \
   "http://127.0.0.1:$PORT/?token=$TOKEN" 2>/dev/null
-echo "  cookie 数: $(grep -c . "$JAR" 2>/dev/null)"
-for P in "/" "/dsh-postman" "/dsh-postman/api/config" "/__no_such_route__"; do
+echo "  index.html = $(wc -c < "$INDEX")B  cookie 数 = $(grep -c . "$JAR" 2>/dev/null)"
+for P in "/dsh-postman" "/dsh-postman/api/config" "/__no_such_route__"; do
   C=$(curl -s -c "$JAR" -b "$JAR" -o /dev/null -w '%{http_code}' --noproxy '*' --max-time 5 "http://127.0.0.1:$PORT$P" 2>/dev/null)
   S=$(curl -s -c "$JAR" -b "$JAR" --noproxy '*' --max-time 5 "http://127.0.0.1:$PORT$P" 2>/dev/null | wc -c)
   echo "  $P -> HTTP $C (${S}B)"
 done
 echo "  对照：/__no_such_route__ 若为 404，则 /dsh-postman 的 401 说明路由已注册（仅被鉴权拦）"
+
+echo "== 客户端 bundle 是否在启动图里 =="
+URL=$(env -u NODE_OPTIONS node -e "
+const fs = require('fs')
+const html = fs.readFileSync(process.argv[1], 'utf8')
+// 启动图里的地址是文档相对的（没有前导斜杠），<script src> 里则带斜杠 —— 两种都认。
+const combo = html.match(/\/?plugins\/\?\?dsh-postman\/client\.js&rev=[0-9a-f]+/)
+const single = html.match(/\/?plugins\/dsh-postman\/client\.js\?rev=[0-9a-f]+/)
+const found = (combo || single || [''])[0]
+console.log(found.startsWith('/') ? found : '/' + found)
+" "$INDEX" 2>/dev/null)
+if [ -n "$URL" ]; then
+  BODY="$TMP/realstart-$PORT.bundle.js"
+  CODE=$(curl -s -c "$JAR" -b "$JAR" -o "$BODY" -w '%{http_code}' --noproxy '*' --max-time 8 \
+    "http://127.0.0.1:$PORT$URL" 2>/dev/null)
+  echo "  $URL -> HTTP $CODE ($(wc -c < "$BODY")B)"
+else
+  echo "  !! 启动图里没有 dsh-postman 的 client bundle"
+fi
 
 echo "== 检查致命报错 =="
 if grep -qiE 'failed to apply|unsupported JSON schema|Cannot find module|Error:' "$OUT"; then
@@ -59,7 +73,5 @@ else
 fi
 
 echo "== 收尾 =="
-kill "$PID" 2>/dev/null
-sleep 1
-kill -9 "$PID" 2>/dev/null
+stop_dsh "$PID"
 echo "READY=$READY"

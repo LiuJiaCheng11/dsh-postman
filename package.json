@@ -1,7 +1,7 @@
 {
   "name": "dsh-postman",
-  "version": "0.4.1",
-  "description": "dsh 插件 · Postman 云端集合管理：让 AI 查询/新增/删除接口、扫源码自动同步，内置 /postman-skill 技能与「设置 → postman」配置页。",
+  "version": "0.5.0",
+  "description": "dsh 插件 · Postman 云端集合管理：让 AI 查询/新增/修改/删除接口、扫源码自动同步，内置 /postman-skill 技能与「设置 → postman」配置页。",
   "license": "MIT",
   "type": "commonjs",
   "main": "src/index.js",
@@ -50,7 +50,7 @@
   },
   "scripts": {
     "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/route-scanner.js && node --check src/schemastery.js && node --check src/page.js && node --check client/client.js",
-    "test": "node test/smoke.js && node test/scanner.js && node test/settings-page.js && node test/client-bundle.js",
+    "test": "node test/smoke.js && node test/edit-and-tree.js && node test/scanner.js && node test/settings-page.js && node test/client-bundle.js",
     "test:real": "bash test/realstart.sh 3099 && bash test/client-served.sh 3098",
     "test:client": "bash test/client-served.sh 3097",
     "prepublishOnly": "npm run check && npm test"

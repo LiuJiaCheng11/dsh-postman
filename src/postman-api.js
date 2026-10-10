@@ -311,6 +311,43 @@ function renderTree(items, indent = 0) {
   return lines
 }
 
+/**
+ * 生成树形文本，但限制输出行数，并如实报告是否被截断。
+ *
+ * 为什么需要：宿主对工具输出有长度上限，超了会**静默截断**。模型拿到半棵树却
+ * 以为看到了全部，就可能误判「目录不存在」进而建出重复目录。这里主动截断并把
+ * 事实说出来，把静默失败变成显式提示。
+ *
+ * @param {Array} items 起始层级的 item 数组。
+ * @param {number} limit 最多输出多少行。
+ * @param {number} [indent] 起始缩进层级。
+ * @returns {{ lines: string[], total: number, truncated: boolean }} total 是遍历到的总项数（目录+请求）。
+ */
+function renderTreeCapped(items, limit, indent = 0) {
+  const lines = []
+  let total = 0
+  const walk = (list, depth) => {
+    for (const it of list || []) {
+      total += 1
+      if (Array.isArray(it.item)) {
+        if (lines.length < limit) lines.push(`${'  '.repeat(depth)}[${it.name}] (${it.item.length})`)
+        walk(it.item, depth + 1)
+      } else if (lines.length < limit) {
+        const r = it.request || {}
+        const raw = r.url && typeof r.url === 'object' ? r.url.raw || '' : String(r.url || '')
+        lines.push(`${'  '.repeat(depth)}- ${it.name} (${r.method || 'GET'}) ${raw}`)
+      }
+    }
+  }
+  walk(items, indent)
+  return { lines, total, truncated: total > lines.length }
+}
+
+/** 列出某一层里所有目录的名字（用于「目录不存在」时给出可选项）。 */
+function listFolderNames(items) {
+  return (items || []).filter((it) => Array.isArray(it.item)).map((it) => it.name)
+}
+
 module.exports = {
   PostmanError,
   BASE,
@@ -332,4 +369,6 @@ module.exports = {
   findRequestDeep,
   buildUrl,
   renderTree,
+  renderTreeCapped,
+  listFolderNames,
 }

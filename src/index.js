@@ -4,8 +4,8 @@
  * dsh-postman — Host 半边。
  *
  * 把 Postman 云端集合的读写能力作为模型可见工具暴露给 dsh：
- *   postman_list / postman_tree / postman_add / postman_rm / postman_pull /
- *   postman_push / postman_config
+ *   postman_list / postman_tree / postman_add / postman_edit / postman_rm /
+ *   postman_pull / postman_push / postman_scan / postman_config
  *
  * 同时在 webServer 上挂一个配置页（/dsh-postman），用于填写 Postman API Key。
  *
@@ -279,6 +279,28 @@ function parseRoots(dir) {
     .filter(Boolean)
 }
 
+/**
+ * 把 ["Key: Value", ...] 解析成 Postman 的 header 数组。
+ * 没有冒号的项直接丢掉（免得把裸字符串塞进集合）。
+ * @param {unknown} raw headers 参数原值。
+ * @returns {Array<{key: string, value: string}>} Postman header 列表。
+ */
+function parseHeaders(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((h) => typeof h === 'string' && h.includes(':'))
+    .map((h) => ({
+      key: h.slice(0, h.indexOf(':')).trim(),
+      value: h.slice(h.indexOf(':') + 1).trim(),
+    }))
+}
+
+/** 按内容猜 body 的 raw language（`{`/`[` 开头当 json，否则 text）。 */
+function guessLanguage(body, explicit) {
+  if (typeof explicit === 'string' && explicit !== '') return explicit
+  return /^\s*[\[{]/.test(String(body)) ? 'json' : 'text'
+}
+
 /** 在 Postman item 树里按路径逐级取/建目录，返回末级目录的 item 数组。 */
 function ensureFolderChain(items, parts) {
   let cur = items
@@ -323,11 +345,18 @@ const TOOL_SPECS = [
   {
     name: 'postman_tree',
     description:
-      '以缩进文本展示某个 Postman 集合的目录树与接口清单（方法 + URL）。用于了解集合结构、定位目标目录。',
+      '以缩进文本展示某个 Postman 集合的目录树与接口清单（方法 + URL）。用于了解集合结构、定位目标目录。' +
+      '集合很大时输出会被截断 —— 传 path 只看某个目录（推荐），或调大 limit。',
     parameters: {
       type: 'object',
       properties: {
         collection: { type: 'string', description: '集合名称或 uid。' },
+        path: {
+          type: 'string',
+          description:
+            '只看某个目录的子树，如 "Discipline/EvaluateIndicator"（多级用 / 分隔）。留空看整棵树。',
+        },
+        limit: { type: 'number', description: '最多渲染多少行，默认 400。' },
       },
       required: ['collection'],
       additionalProperties: false,
@@ -336,16 +365,54 @@ const TOOL_SPECS = [
       const meta = await api.resolveCollection(key, args.collection)
       const col = await api.getCollection(key, meta.uid, false)
       const items = col.item || []
-      const header = `${meta.name}  (${api.countRequests(items)} 个请求)  uid=${meta.uid}`
-      const tree = api.renderTree(items)
-      return { text: tree.length ? `${header}\n${tree.join('\n')}` : `${header}\n（空集合）` }
+
+      // 只看子树：先把范围缩到一个目录，输出量就跟集合大小解耦了
+      let scope = items
+      let scopeLabel = ''
+      if (typeof args.path === 'string' && args.path.trim() !== '') {
+        const wanted = args.path.trim()
+        const folder = api.findFolder(items, wanted)
+        if (!folder) {
+          const tops = api.listFolderNames(items)
+          throw new Error(
+            `目录不存在：${wanted}。集合「${meta.name}」的顶层目录：${tops.join('、') || '（无）'}`,
+          )
+        }
+        scope = folder.item
+        scopeLabel = ` › ${wanted}`
+      }
+
+      const limit = Number.isFinite(args.limit) && args.limit > 0 ? Math.floor(args.limit) : 400
+      const header = `${meta.name}${scopeLabel}  (${api.countRequests(scope)} 个请求)  uid=${meta.uid}`
+      const { lines, total, truncated } = api.renderTreeCapped(scope, limit)
+
+      if (total === 0) return { text: `${header}\n（空目录）` }
+
+      const body = lines.join('\n')
+      if (!truncated) return { text: `${header}\n${body}` }
+
+      // 截断了就明说，并把「可以往哪钻」直接给出来，别让模型在残树上猜
+      const tops = api.listFolderNames(items)
+      return {
+        text: [
+          header,
+          body,
+          '',
+          `⚠️ 输出已截断：只渲染了前 ${lines.length} 行（该范围共 ${total} 项）。`,
+          `请用 path 参数只看某个目录再继续，或调大 limit。`,
+          tops.length > 0 ? `顶层目录：${tops.join('、')}` : '',
+        ]
+          .filter((line) => line !== '')
+          .join('\n'),
+      }
     },
   },
   {
     name: 'postman_add',
     description:
       '在指定 Postman 集合的某个目录下新增一个接口请求。写操作前会自动拉取最新版本并备份。' +
-      'path 支持多级（如 "测试" 或 "Attendance/Leave"），留空表示加到集合根层；目录不存在时可自动创建。',
+      'path 支持多级（如 "测试" 或 "Attendance/Leave"），留空表示加到集合根层；目录不存在时可自动创建。' +
+      '同目录下已有同名请求时会报错 —— 想改已有的请用 postman_edit。',
     parameters: {
       type: 'object',
       properties: {
@@ -399,11 +466,7 @@ const TOOL_SPECS = [
         throw new Error(`该目录下已存在同名请求：${args.name}`)
       }
 
-      const headers = Array.isArray(args.headers)
-        ? args.headers
-            .filter((h) => typeof h === 'string' && h.includes(':'))
-            .map((h) => ({ key: h.slice(0, h.indexOf(':')).trim(), value: h.slice(h.indexOf(':') + 1).trim() }))
-        : []
+      const headers = parseHeaders(args.headers)
 
       const request = {
         method: String(args.method || 'GET').toUpperCase(),
@@ -412,7 +475,7 @@ const TOOL_SPECS = [
       }
 
       if (typeof args.body === 'string' && args.body !== '') {
-        const lang = args.language || (/^\s*[\[{]/.test(args.body) ? 'json' : 'text')
+        const lang = guessLanguage(args.body, args.language)
         request.body = { mode: 'raw', raw: args.body, options: { raw: { language: lang } } }
       }
       if (args.auth === true && col.auth) request.auth = col.auth
@@ -447,6 +510,123 @@ const TOOL_SPECS = [
       await api.putCollection(key, meta.uid, col)
       const after = api.countRequests(col.item || [])
       return { text: `已删除「${args.name}」（${meta.name}）；请求数 ${before} → ${after}。` }
+    },
+  },
+  {
+    name: 'postman_edit',
+    description:
+      '就地修改集合里**已存在**的一个接口请求（按名称递归定位，改第一个匹配项）。只动传入的字段，' +
+      '其余字段（含 Tests / Pre-request 脚本、示例响应、protocolProfileBehavior）原样保留。' +
+      '**要改已有接口就用它** —— 不要用 postman_rm + postman_add，那条路会静默丢掉上述字段，' +
+      '而且两次 PUT 之间请求是不存在的。写操作前会自动拉取最新版本并备份。',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string', description: '集合名称或 uid。' },
+        name: { type: 'string', description: '要修改的请求的当前名称。' },
+        newName: { type: 'string', description: '改名字（同目录下不能重名）。' },
+        url: { type: 'string', description: '新的完整请求 URL。' },
+        method: { type: 'string', description: '新的 HTTP 方法。' },
+        headers: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '整份替换请求头，每项形如 "Key: Value"。不传则保持原样。',
+        },
+        body: { type: 'string', description: '新的 raw 请求体文本。不传则保持原样；要清空请用 clearBody。' },
+        language: { type: 'string', description: 'body 语言（json/text 等）；只改语言不改内容时可单独传。' },
+        clearBody: { type: 'boolean', description: 'true 时彻底移除请求体。' },
+        description: { type: 'string', description: '新的接口说明；传空字符串即删除说明。' },
+        auth: { type: 'boolean', description: 'true 继承集合级 auth；false 移除请求级 auth。' },
+      },
+      required: ['collection', 'name'],
+      additionalProperties: false,
+    },
+    async run(args, { key }) {
+      const meta = await api.resolveCollection(key, args.collection)
+      const col = await api.getCollection(key, meta.uid, true) // 覆盖前先备份云端当前版本
+      const found = api.findRequestDeep(col.item || [], args.name)
+      if (!found) throw new Error(`找不到请求：${args.name}`)
+
+      const node = found.node
+      if (node.request === null || typeof node.request !== 'object') node.request = {}
+      const request = node.request
+      const changes = []
+
+      // 改名：先查重名，免得悄悄造出两个同名请求
+      if (typeof args.newName === 'string' && args.newName.trim() !== '') {
+        const next = args.newName.trim()
+        if (next !== node.name) {
+          const clash = found.list.some((it) => it !== node && !Array.isArray(it.item) && it.name === next)
+          if (clash) throw new Error(`同目录下已存在同名请求：${next}`)
+          changes.push(`名称 ${node.name} → ${next}`)
+          node.name = next
+        }
+      }
+
+      if (typeof args.method === 'string' && args.method.trim() !== '') {
+        request.method = args.method.trim().toUpperCase()
+        changes.push(`方法 → ${request.method}`)
+      }
+
+      if (typeof args.url === 'string' && args.url.trim() !== '') {
+        const next = args.url.trim()
+        request.url = api.buildUrl(next)
+        changes.push(`URL → ${next}`)
+      }
+
+      if (Array.isArray(args.headers)) {
+        request.header = parseHeaders(args.headers)
+        changes.push(`请求头 → ${request.header.length} 条`)
+      }
+
+      // 请求体：clearBody 优先；给了 body 就整体替换；只给了 language 就只改语言
+      if (args.clearBody === true) {
+        if (request.body !== undefined) changes.push('请求体已清除')
+        delete request.body
+      } else if (typeof args.body === 'string' && args.body !== '') {
+        const lang = guessLanguage(args.body, args.language)
+        request.body = { mode: 'raw', raw: args.body, options: { raw: { language: lang } } }
+        changes.push(`请求体已更新（${lang}）`)
+      } else if (typeof args.language === 'string' && args.language !== '') {
+        if (request.body !== undefined && request.body.mode === 'raw') {
+          request.body.options = { ...(request.body.options || {}), raw: { language: args.language } }
+          changes.push(`请求体语言 → ${args.language}`)
+        } else {
+          throw new Error('要改 language 需要该请求已有 raw 请求体；没有的话请一起传 body。')
+        }
+      }
+
+      if (typeof args.description === 'string') {
+        if (args.description === '') {
+          delete request.description
+          changes.push('说明已删除')
+        } else {
+          request.description = args.description
+          changes.push('说明已更新')
+        }
+      }
+
+      if (args.auth === true) {
+        if (!col.auth) throw new Error('该集合没有集合级 auth，无法继承。')
+        request.auth = col.auth
+        changes.push('已继承集合 auth')
+      } else if (args.auth === false) {
+        delete request.auth
+        changes.push('已移除请求级 auth')
+      }
+
+      if (changes.length === 0) {
+        throw new Error(
+          '没有提供任何要修改的字段。可用：newName / url / method / headers / body / language / clearBody / description / auth。',
+        )
+      }
+
+      await api.putCollection(key, meta.uid, col)
+      return {
+        text: `已更新「${args.name}」：${changes.join('；')}（${meta.name}）；请求数 ${api.countRequests(
+          col.item || [],
+        )}。`,
+      }
     },
   },
   {
@@ -906,9 +1086,12 @@ module.exports = {
             text:
               'Postman 工具可用（也可用 ' +
               SKILL_NAME +
-              ' 技能获得完整用法）：postman_list 查看集合、postman_tree 查看结构、' +
-              'postman_add 新增接口、postman_rm 删除接口、postman_pull/postman_push 导入导出、' +
-              'postman_scan 扫源码对比并补齐接口。若返回「尚未配置 API Key」，' +
+              ' 技能获得完整用法）：postman_list 查看集合、postman_tree 查看结构' +
+              '（集合大时用 path 只看某个目录）、postman_add 新增接口、' +
+              'postman_edit 就地修改已有接口、postman_rm 删除接口、' +
+              'postman_pull/postman_push 导入导出、postman_scan 扫源码对比并补齐接口。' +
+              '**改已有接口一律用 postman_edit，不要用 rm + add**（后者会丢掉 Tests 脚本、' +
+              '示例响应等字段）。若返回「尚未配置 API Key」，' +
               '引导用户到「设置 → postman」填写，不要索要 Key 明文。' +
               '写操作是整体覆盖，工具已自动先拉取最新版并备份；破坏性操作前先向用户确认。',
           }),

@@ -18,18 +18,20 @@ if [ "${I_KNOW:-0}" != "1" ]; then
 fi
 
 PORT="${1:-3093}"
-DSH="${2:-E:/software/deepseek-harness/apps/cli/lib/bin.js}"
+HERE="$(cd "$(dirname "$0")" && pwd -W 2>/dev/null)"
+[ -n "$HERE" ] || HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=./_runtime.sh
+source "$HERE/_runtime.sh"
+runtime_resolve || exit 1
 PROFILE="$HOME/.dsh/profiles/web/cordis.patch.yml"
 # 传给 node 的必须是 Windows 风格路径：Git Bash 的 /c/Users/... 会被 node 当成
 # 「当前盘符下的相对路径」（变成 E:\c\Users\...）。
 PROFILE_WIN="$(cd "$(dirname "$PROFILE")" && pwd -W)/$(basename "$PROFILE")"
-ROOT="$(cd "$(dirname "$0")/.." && pwd -W 2>/dev/null || pwd)"
-TMP="$ROOT/.tmp"
-mkdir -p "$TMP"
+TMP="$(runtime_dir)"
 OUT="$TMP/livereload-$PORT.log"
 JAR="$TMP/livereload-$PORT.jar"
 BAK="$TMP/cordis.patch.yml.bak"
-: > "$OUT"; : > "$JAR"
+: > "$JAR"
 
 cp "$PROFILE" "$BAK"
 echo "== 已备份 patch → $BAK =="
@@ -48,15 +50,11 @@ probe() {
 }
 
 echo "== 启动 dsh web (port=$PORT) =="
-env -u NODE_OPTIONS -u CODEBUDDY_MCP_CONFIG node "$DSH" web --port "$PORT" --no-open > "$OUT" 2>&1 &
-PID=$!
-for i in $(seq 1 40); do
-  sleep 1
-  if ! kill -0 "$PID" 2>/dev/null; then echo "!! 进程在 ${i}s 时退出"; break; fi
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' --max-time 3 "http://127.0.0.1:$PORT/" 2>/dev/null)
-  if [ "$CODE" != "000" ]; then echo "端口就绪于 ${i}s (HTTP $CODE)"; break; fi
-done
-TOKEN=$(sed -n 's/.*token=\([A-Za-z0-9_-]*\).*/\1/p' "$OUT" | head -1)
+echo "   运行时 = $RT_DESC"
+PID=$(start_dsh "$PORT" "$OUT")
+echo "   pid=$PID"
+READY=$(wait_for_port "$PID" "$PORT" "$OUT")
+TOKEN=$(read_token "$OUT")
 curl -sL -c "$JAR" -b "$JAR" -o /dev/null --noproxy '*' --max-time 8 "http://127.0.0.1:$PORT/?token=$TOKEN" 2>/dev/null
 
 echo "── 基线（启动时）──"

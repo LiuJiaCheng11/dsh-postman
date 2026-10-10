@@ -1,10 +1,10 @@
 # dsh-postman
 
 一个 [dsh（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 插件：
-**给 AI 一套访问线上 Postman 的工具**——查询、新增、删除接口，导出导入集合，扫源码批量补齐。
+**给 AI 一套访问线上 Postman 的工具**——查询、新增、修改、删除接口，导出导入集合，扫源码批量补齐。
 
-- 8 个模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_rm` /
-  `postman_pull` / `postman_push` / `postman_scan` / `postman_config`
+- 9 个模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_edit` /
+  `postman_rm` / `postman_pull` / `postman_push` / `postman_scan` / `postman_config`
 - **`/postman-skill` 技能**：像 `/browser-skill` 一样，一句话把整套用法注入当前会话
 - **配置在 dsh 的「设置 → Postman」**：自带客户端半边注册设置分区，`apiKey` 标了
   `role('secret')`，明文不会回传浏览器
@@ -132,8 +132,9 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 | 工具 | 作用 |
 |---|---|
 | `postman_list` | 列出全部集合（名称 + uid） |
-| `postman_tree` | 展示某集合的目录树与接口清单 |
+| `postman_tree` | 展示某集合的目录树与接口清单；可只 `path` 某个目录，输出过长会**显式报截断** |
 | `postman_add` | 在指定目录新增接口（可自动建目录、继承集合 auth） |
+| `postman_edit` | **就地修改**已有接口：改名 / URL / 方法 / 请求头 / 请求体 / 说明 / auth |
 | `postman_rm` | 按名称删除接口 |
 | `postman_pull` | 导出集合为 Postman v2.1 JSON |
 | `postman_push` | 用本地 JSON 整体覆盖集合 |
@@ -146,11 +147,53 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 >
 > 在 App 的「测试」目录下加一个 GET 接口 http://localhost:8080/api/v1/models
 >
+> 把 App 集合里「健康检查」的地址改成 /healthz
+>
 > 把 Converter 集合导出到 D:/tmp/converter.json
 >
 > 扫一下 D:/src/MyApi，看哪些接口还没进 Postman
 >
 > 把 D:/src/MyApi 里没同步的接口写进 App 集合
+
+### postman_edit：改接口别用「先删再加」
+
+`postman_edit` 是**就地 patch**：只动你传进去的字段，其余原样保留——包括
+`event`（Pre-request / Tests 脚本）、`response`（示例响应）、`protocolProfileBehavior`
+这些工具本身不认识的字段。
+
+| 参数 | 说明 |
+|---|---|
+| `collection` / `name` | **必填**。集合 + 要改的请求名（按名称递归定位第一个匹配） |
+| `newName` | 改名字；同层已有同名会报错 |
+| `url` / `method` | 新的 URL / HTTP 方法（方法自动转大写） |
+| `headers` | **整份替换**（不是合并），每项 `"Key: Value"`；无冒号的行会被忽略 |
+| `body` / `language` | 新的 raw 请求体 / 语言；不传 `body` 就不动它 |
+| `clearBody` | `true` 时彻底移除请求体（优先级高于 `body`） |
+| `description` | 新说明；传空字符串即删除说明 |
+| `auth` | `true` 继承集合级 auth；`false` 移除请求级 auth |
+
+**为什么不能用 `postman_rm` + `postman_add` 代替**：`add` 只构造
+`method / header / url / body / auth` 五个字段，`rm` + `add` 走一遍会把上面那些
+字段**静默丢掉**（不会报错、不会提示），而且两次 PUT 之间请求在一段时间内是不存在的。
+`test/edit-and-tree.js` 里有一条用例专门把这件事钉住。
+
+`postman_rm` 只用于**真的删接口**。
+
+### postman_tree：大集合怎么不被截断
+
+| 参数 | 说明 |
+|---|---|
+| `collection` | **必填**。集合名或 uid |
+| `path` | 只看某个目录的子树，如 `"Discipline/EvaluateIndicator"`（多级用 `/` 分隔）。目录不存在时报错并列出顶层目录 |
+| `limit` | 最多渲染多少行，默认 400 |
+
+输出被截断时**不会静默**：末尾会追加
+
+```text
+⚠️ 输出已截断：只渲染了前 400 行（该范围共 523 项）。
+请用 path 参数只看某个目录再继续，或调大 limit。
+顶层目录：测试、Attendance、Discipline
+```
 
 ### postman_scan：扫代码生成接口
 
@@ -188,12 +231,14 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 
 | 现象 | 原因 | 绕过办法 |
 |---|---|---|
-| `postman_tree` 在一个 500+ 请求的集合上输出很长，模型可能只看到前半段 | 工具一次性渲染整棵树，没有分页/过滤参数 | 用 `postman_pull` 导出到文件再查；或在集合里先定位到子目录 |
-| 想改一个已存在接口的请求体，没有「编辑」动作 | 只有 `add` / `rm` | 按技能里的写法 **先 `postman_rm` 再 `postman_add`**（工具没有 edit，技能里已写明） |
 | 每次写操作都会 PUT 整个集合 | Postman API 的 PUT 是整体覆盖 | 工具已自动先 GET 最新版本并备份到 `~/.postman_backup/`，正常使用无感 |
+| `postman_edit` 改请求头是**整份替换**，不是按 key 合并 | 保持语义简单、可预期 | 要保留原有 header 就把它们一并写进 `headers` |
+| `postman_edit` 按**名称**定位，重名时只改第一个匹配 | 名称是唯一对模型友好的标识 | 集合里避免同名请求；必要时先用 `postman_tree` 确认 |
+| `postman_scan` 只认 ASP.NET Core 的约定路由 | 扫描器按 C# 特性/模板解析 | 其它框架先 `postman_pull` 导出，本地改完 `postman_push` |
 
-> 如果后面要加 `postman_edit` / `postman_tree` 的 `folder` 过滤，属于**加 API**，
-> 要同步改技能正文与系统提示里的工具清单，别只改 `src/index.js`。
+> 0.4.1 及以前有两条限制（`postman_tree` 输出过长会被静默截断、没有「编辑」动作只能
+> 先删再加）已在 **0.5.0** 解决：前者改为带 `path` / `limit` 且截断时显式提示，
+> 后者新增 `postman_edit` 就地 patch。技能正文与系统提示的工具清单已同步。
 
 ## 安全说明
 
@@ -224,10 +269,12 @@ dsh-postman/
     page.js             # 备用配置页 HTML
   test/
     smoke.js            # 冒烟测试（假 ctx 加载 + 契约校验 + 真实 list 调用）
+    edit-and-tree.js    # postman_edit 的 patch 语义 + postman_tree 的 path/limit（22 项断言）
     scanner.js          # 扫描器单测（内联 fixture，5 组断言）
     settings-page.js    # 命名空间回归：复刻 dsh 的表单投影逻辑跑真实 Config
     client-bundle.js    # 客户端 bundle 单测（假浏览器 + 假 React）
-    realstart.sh        # 真启动：探宿主路由 + 查致命报错
+    _runtime.sh         # 三个真启动脚本共用的运行时选择 / 起实例 / 取 token
+    realstart.sh        # 真启动：探宿主路由 + 客户端 bundle + 查致命报错
     client-served.sh    # 真启动：确认客户端 bundle 被编入启动图并正常发出
     probe-key.sh        # 真启动：探 /dsh-postman/api/config，看 Key 实际来源
     livereload-probe.sh # 真启动：验证「外部改 patch 文件不会热加载」（会临时改 profile，自带备份还原）
@@ -242,8 +289,9 @@ dsh-postman/
 ```sh
 cd E:/Code/DshPlugins/dsh-postman
 npm run check              # node --check 全部源文件（含 client/client.js）
-npm test                   # 下面四个单测一起跑
+npm test                   # 下面五个单测一起跑
 node test/smoke.js         # 导出契约 + Config + 工具 + 技能 + 设置命名空间 + 路由
+node test/edit-and-tree.js # postman_edit 的 patch 语义 + postman_tree 的 path/limit/截断提示
 node test/scanner.js       # 扫描器单测
 node test/settings-page.js # 命名空间会不会进 describe()（含反向对照）
 node test/client-bundle.js # 客户端 bundle 的注册契约与写入路径
@@ -262,21 +310,21 @@ bash test/probe-key.sh     # 真启动后看 Key 实际来源（排查配置问�
 > **改完工具 schema 或 `Config` 一定要跑它**——`--dump-config`
 > 只组合 YAML、不 import 插件，测不出这类问题。
 >
-> 两个运行时都测过（用第二个参数或 `DSH=` 指定入口）：
+> **默认运行时就是源码仓库那份 0.2.0-rc.2**（本机是以
+> `node --expose-internals --import tsx/esm apps/cli/src/bin.ts web` 从源码起的），
+> 也就是你真实在跑的那一份。它同时具备 `settings.section` 槽位与 `configForms`，
+> 即「设置 → Postman」那一页能出现的那一套。
+>
+> 想换成别的运行时（做兼容性回归）：
 >
 > ```sh
-> # 已安装运行时（0.1.x，走 settings.register 那条路径）
-> bash test/realstart.sh 3096
-> bash test/client-served.sh 3095
-> # 源码仓库运行时（0.2.x，走 Config 派生那条路径）
-> DSH="E:/software/deepseek-harness/apps/cli/lib/bin.js" bash test/realstart.sh 3097
-> DSH="E:/software/deepseek-harness/apps/cli/lib/bin.js" bash test/client-served.sh 3098
+> # 已安装的 0.1.1-rc.1（只保证工具与备用页可用，没有设置分区）
+> DSH="C:/Users/ljc/.dsh/dsh-browser/node_modules/@deepseek-ai/dsh/lib/bin.js" bash test/realstart.sh 3096
+> # 源码仓库的构建产物（等价于默认，但走 lib/ 而不是 src/）
+> DSH="E:/software/deepseek-harness/apps/cli/lib/bin.js" bash test/client-served.sh 3095
+> # 完整自定义命令
+> DSH_CMD="node --expose-internals --import tsx/esm apps/cli/src/bin.ts" DSH_SRC="E:/software/deepseek-harness" bash test/realstart.sh 3094
 > ```
->
-> **主目标运行时是源码仓库那份 0.2.0-rc.2**（本机是以
-> `node --expose-internals --import tsx/esm apps/cli/src/bin.ts web` 从源码起的）。
-> 只有它同时具备 `settings.section` 槽位与 `configForms`，也就是「设置 → Postman」
-> 那一页能出现的那一套。已安装的 0.1.1-rc.1 只保证工具与备用页可用。
 >
 > 两者发 bundle 的 URL 格式不同，`client-served.sh` 两种都认：
 > 0.2.x 是 combo（`/plugins/??dsh-postman/client.js&rev=…`），
@@ -304,6 +352,15 @@ postman_config 1   postman_list 1        ← 共 15 次，0 次报错
 那次任务是在一个 518 请求的集合里往空目录加 5 个接口：先 `config` 确认 Key 来源 →
 `list` 找集合 → `tree` 定位空目录 → 连加 5 个 → `tree`/`pull` 复核 → 发现两个请求体是
 占位符 → `rm` + `add` 修正 → 再 `pull` 终验。集合请求数 518 → 523，全程无误报。
+
+这次实测直接催生了 0.5.0 的两个改动：
+
+- 那 2 次 `rm` **全部是为了改请求体**（占位符换真值），也就是 100% 可以被
+  `postman_edit` 消掉；而且那条路径会把 Tests 脚本/示例响应一起丢掉。
+- `tree` 有 1 次输出被截断，模型当时只能改用 `pull` 落盘复核——所以现在截断会
+  显式报出来，并提示用 `path` 缩小范围。
+
+（同会话另有 20 个报错，**全部来自 `browser-skill`**，与本插件无关。）
 
 ## 发布
 

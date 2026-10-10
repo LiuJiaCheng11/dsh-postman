@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # 真启动验证：客户端半边（设置 → Postman 那一页）是否被宿主编入启动图并正常发出。
 #
-# 用法： bash test/client-served.sh [port] [runtime-bin]
-#   DSH 环境变量可覆盖运行时入口。
+# 用法： bash test/client-served.sh [port]
+#
+# 默认跑**源码仓库那份 0.2.0-rc.2**（用户真实在跑的运行时）。
+# 覆盖方式见 test/_runtime.sh 顶部注释。
 #
 # 为什么需要它：
 #   `dsh.client` + `exports["./client"]` 的接线错了，宿主**不会报错**——表现是
@@ -15,37 +17,28 @@
 #   0.1.x（已安装）  ： /plugins/dsh-postman/client.js?rev=<rev>          （单资源）
 set -u
 
-PORT="${1:-3099}"
-DSH="${2:-${DSH:-C:/Users/ljc/.dsh/dsh-browser/node_modules/@deepseek-ai/dsh/lib/bin.js}}"
+HERE="$(cd "$(dirname "$0")" && pwd -W 2>/dev/null)"
+[ -n "$HERE" ] || HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=./_runtime.sh
+source "$HERE/_runtime.sh"
 
-# curl 在 Windows 上是原生二进制，写不了 Git Bash 的 /tmp —— 用项目内的临时目录。
-# 注意 `pwd -W`：Git Bash 的 `pwd` 返回 `/e/Code/...`，传给 node 会被当成
-# 「当前盘符下的相对路径」（变成 E:\e\Code\...）。`-W` 给出 Windows 风格路径。
-ROOT="$(cd "$(dirname "$0")/.." && pwd -W 2>/dev/null || pwd)"
-TMP="$ROOT/.tmp"
-mkdir -p "$TMP"
+PORT="${1:-3098}"
+runtime_resolve || exit 1
+TMP="$(runtime_dir)"
 OUT="$TMP/client-served-$PORT.log"
 JAR="$TMP/client-served-$PORT.jar"
 INDEX="$TMP/client-served-$PORT.html"
 BODY="$TMP/client-served-$PORT.bundle.js"
-: > "$OUT"; : > "$JAR"
+: > "$JAR"
 
 echo "== 启动 dsh web (port=$PORT) =="
-echo "   runtime = $DSH"
-env -u NODE_OPTIONS -u CODEBUDDY_MCP_CONFIG \
-  node "$DSH" web --port "$PORT" --no-open > "$OUT" 2>&1 &
-PID=$!
+echo "   运行时 = $RT_DESC"
+PID=$(start_dsh "$PORT" "$OUT")
+echo "   pid=$PID"
+READY=$(wait_for_port "$PID" "$PORT" "$OUT")
 
-READY=0
-for i in $(seq 1 40); do
-  sleep 1
-  if ! kill -0 "$PID" 2>/dev/null; then echo "!! 进程在 ${i}s 时退出"; break; fi
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' --max-time 3 "http://127.0.0.1:$PORT/" 2>/dev/null)
-  if [ "$CODE" != "000" ]; then READY=1; echo "端口就绪于 ${i}s (HTTP $CODE)"; break; fi
-done
-
-TOKEN=$(sed -n 's/.*token=\([A-Za-z0-9_-]*\).*/\1/p' "$OUT" | head -1)
-curl -sL -c "$JAR" -b "$JAR" -o "$INDEX" --noproxy '*' --max-time 8 \
+TOKEN=$(read_token "$OUT")
+curl -sL -c "$JAR" -b "$JAR" -o "$INDEX" --noproxy '*' --max-time 10 \
   "http://127.0.0.1:$PORT/?token=$TOKEN" 2>/dev/null
 echo "   index.html = $(wc -c < "$INDEX")B"
 
@@ -64,7 +57,7 @@ if [ -z "$URL" ]; then
   echo "!! 启动图里没有 dsh-postman 的 client bundle —— 检查 package.json 的 dsh.client 与 exports[\"./client\"]"
   echo "== 日志尾部 =="
   tail -20 "$OUT"
-  kill "$PID" 2>/dev/null; sleep 1; kill -9 "$PID" 2>/dev/null
+  stop_dsh "$PID"
   exit 1
 fi
 echo "   URL = $URL"
@@ -91,6 +84,6 @@ else
   echo "OK：未见致命报错"
 fi
 
-kill "$PID" 2>/dev/null; sleep 1; kill -9 "$PID" 2>/dev/null
+stop_dsh "$PID"
 echo "READY=$READY FAIL=$FAIL"
 exit "$FAIL"

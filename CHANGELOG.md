@@ -3,6 +3,66 @@
 本文件记录 dsh-postman 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.0] — 2026-10-10
+
+把上一轮实测里暴露的两个摩擦点直接消掉：**改接口不必再「先删再加」**，
+**大树不再静默截断**。
+
+### Added
+
+- **`postman_edit`：就地修改已有接口。** 按名称递归定位，只 patch 传入的字段，
+  其余原样保留——包括 `event`（Pre-request / Tests 脚本）、`response`（示例响应）、
+  `protocolProfileBehavior` 等工具本身不认识的字段。
+  参数：`newName` / `url` / `method` / `headers`（整份替换）/ `body` / `language` /
+  `clearBody` / `description`（空串 = 删除）/ `auth`（`true` 继承集合级、`false` 移除）。
+  改名撞同层已有名字、只给 `language` 但原本没有 raw body、集合没有 auth 却要继承、
+  一个字段都没传 —— 这几种情况都会**明确报错**，而不是写入一个半成品。
+- **`postman_tree` 的 `path` 与 `limit` 参数。** `path` 只看某个目录的子树
+  （`"Discipline/EvaluateIndicator"`），目录不存在时报错并列出顶层目录；
+  `limit` 默认 400 行。
+- **截断不再静默。** 输出超限时末尾追加显式提示（渲染了多少行 / 该范围共多少项 /
+  改用 `path` 或调大 `limit` / 顶层目录列表），把「静默失败」变成可行动的信号。
+- `test/edit-and-tree.js`：22 项断言。用内存假云端替换 `postman-api` 的网络入口，
+  其余纯函数保持真实实现。覆盖 patch 语义、字段保留、各种报错分支，
+  以及**一条反向对照用例**：真跑一遍 `rm` + `add`，证明 `event` / `response` /
+  `description` 确实会永久消失。
+- `test/_runtime.sh`：三个真启动脚本共用的运行时选择 / 起实例 / 取 token。
+
+### Changed
+
+- **真启动脚本的默认运行时改为源码仓库那份 0.2.0-rc.2**
+  （`node --expose-internals --import tsx/esm apps/cli/src/bin.ts web`），
+  也就是本机真实在跑的那一份。此前的默认是
+  `~/.dsh/dsh-browser/node_modules/@deepseek-ai/dsh`（**0.1.1-rc.1**，且是被别的包带下来的
+  传递依赖）—— 那是已安装的旧版，能力不同（没有 `configForms` / `settings.section`），
+  拿它当默认会把结论带偏。覆盖方式：`DSH=`（入口）/ `DSH_CMD=`（完整命令）/ `DSH_SRC=`（仓库位置）。
+- `skill/SKILL.md`：工具表加 `postman_edit`；「改接口前先确认现状」那节从
+  「没有『改』这个动作，改 = 删掉再新增」改为**优先 `postman_edit`**，
+  并把 `rm` 定位为「仅用于真的删除」；硬性规则里新增两条（改接口一律用 `postman_edit`、
+  看到截断提示该怎么办）。
+- `src/index.js` 系统提示的工具清单同步（含「不要用 rm + add 改接口」的明确劝阻）；
+  `postman_add` 的说明补上「同名会报错，想改已有的请用 `postman_edit`」。
+- 抽出 `parseHeaders()` / `guessLanguage()` 供 `add` 与 `edit` 共用（行为等价）。
+- README：工具表加 `postman_edit`、新增「postman_edit：改接口别用『先删再加』」与
+  「postman_tree：大集合怎么不被截断」两节；「已知限制」里那两条已解决的移出，
+  换成新的四条真实摩擦点；实测参考补上这两个改动的由来。
+
+### Fixed
+
+- 真启动脚本的就绪判据：从「端口有响应」改为**日志里出现 token 行**。
+  实测端口会先被占住并返回 404/401，此时 dsh 还没打印访问地址，拿去换 cookie 必失败
+  ——原来的写法会误判为「2 秒就绪」。
+- 四个真启动脚本里 `HERE="$(cd … && pwd -W … || cd … && pwd)"` 的运算符结合性 bug
+  （实际按 `(A || B) && C` 解析，会多输出一行路径，导致 `source` 找不到文件）。
+
+### 实测（本轮依据）
+
+- 源码运行时 0.2.0-rc.2 真启动：`/dsh-postman` → HTTP 200，`/dsh-postman/api/config` → 200，
+  对照组 `/__no_such_route__` → 404；客户端 bundle
+  `/plugins/??dsh-postman/client.js&rev=a37266323764` → 200（15215B），
+  包装 / 注册 id / `settings.section` 均正确；启动日志无致命报错。
+- `npm run check` = 0；`npm test` = 0（新增 `edit-and-tree.js` 的 22 项断言，五个单测全绿）。
+
 ## [0.4.1] — 2026-10-10
 
 封板前的实测复核与健壮性收口。
