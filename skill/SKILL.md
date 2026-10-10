@@ -1,6 +1,6 @@
 ---
 name: postman-skill
-description: 用 dsh-postman 插件读写线上 Postman 集合：列出集合、查看目录树、新增/修改/删除接口、导出导入 JSON、扫源码补齐接口。当用户提到 Postman、接口集合、collection、API 文档同步时使用。
+description: 用 dsh-postman 插件读写线上 Postman 集合：列出集合、查看目录树、新增/修改/删除接口、导出导入 JSON。当用户提到 Postman、接口集合、collection、API 文档同步时使用。
 ---
 
 # postman-skill
@@ -28,7 +28,6 @@ description: 用 dsh-postman 插件读写线上 Postman 集合：列出集合、
 | `postman_rm` | 按名称删除接口（递归找第一个匹配） | `collection` `name` |
 | `postman_pull` | 导出集合为本地 Postman v2.1 JSON | `collection` `out` |
 | `postman_push` | 用本地 JSON 整体覆盖集合 | `collection` `file` |
-| `postman_scan` | 扫源码提取路由，报告/对比/写入集合 | `dir`；可选 `collection` `import` `folder` `baseUrl` `module` `limit` |
 | `postman_config` | 查看/设置/清除 API Key | `action`（status/set/clear） |
 
 ## 典型流程
@@ -58,15 +57,24 @@ Pre-request/Tests 脚本（`event`）、示例响应（`response`）等字段，
 
 **大范围重写**（比如整份 JSON 已在本地编辑好）才用 `postman_pull` 导出 → 改 → `postman_push` 覆盖。
 
-**批量补接口**（源码 → Postman）
+**按代码批量补接口**（源码 → Postman）
+
+本插件**不含任何源码解析**——它只提供单条写入能力。读代码是你的活：
 
 ```text
-postman_scan({ dir: "D:/src/MyApi", collection: "App" })              # 只报告差异
-postman_scan({ dir: "D:/src/MyApi", collection: "App", import: true, baseUrl: "http://localhost:8080" })
+1. 自己读用户的代码（Java / Python / C# / Go / 随便什么），列出要加的接口：
+   名称、HTTP 方法、完整 URL、请求体
+2. 先 postman_tree({ collection: "App" }) 看集合里已有什么，避免重复
+3. 对每个要加的接口调一次 postman_add({ collection, name, url, method, path, body })
 ```
 
-`dir` 支持多个根，用逗号/分号分隔。`baseUrl` 决定写进集合的 URL 前缀，
-**不要替用户猜端口**——不知道就问，或让用户自己传。
+几条实操建议：
+
+- **先报告再写**：把整理好的接口清单给用户过一眼，确认后再逐个写入。
+- **一次别写太多**：每次 `postman_add` 都会 `GET` + 备份 + `PUT` 整个集合。
+  集合很大时（几百个请求）连续写几十条会明显变慢——分批写，写完用 `postman_tree` 复核。
+- **端口不要猜**：URL 前缀（`http://localhost:8080` 之类）问用户，或从用户给的样例里取。
+- **接口的 URL 必须是你自己确认过的**：插件不会替你推导路由，写进去什么就是什么。
 
 ## 硬性规则
 
@@ -76,9 +84,10 @@ postman_scan({ dir: "D:/src/MyApi", collection: "App", import: true, baseUrl: "h
   `response`（示例响应）、`protocolProfileBehavior` 等它不认识的字段。`rm` + `add` 会把这些**静默丢掉**。
 - **`postman_tree` 输出可能被截断**：默认上限 400 行，被截断时返回末尾会有 `⚠️ 输出已截断` 的显式提示。
   看到提示就改用 `path` 只看某个目录，或调大 `limit`，**不要**当作「树就这么大」。
-- **写操作前必须让用户确认**：删除接口、`postman_push` 覆盖集合、`postman_scan import=true`
-  批量写入，都属于破坏性操作，先说明「要改什么、影响多少条」再执行。
+- **写操作前必须让用户确认**：删除接口、`postman_push` 覆盖集合、批量 `postman_add`，
+  都属于破坏性操作，先说明「要改什么、影响多少条」再执行。
 - **不要猜集合名**：`postman_list` 拿到真实名称再用。
 - **同目录不可重名**：`postman_add` 遇到同名会报错（想改已有的请用 `postman_edit`）；
   `postman_edit` 的 `newName` 撞到同层已有名字也会报错。
-- **报告优先**：不确定时先跑不带 `import` 的 `postman_scan`，让用户看过差异再写入。
+- **批量写入先报告清单**：你从代码里整理出的接口，先给用户确认再写。插件不校验你的路由推导，
+  写错了它不会拦你。

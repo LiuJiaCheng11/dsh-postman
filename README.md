@@ -1,14 +1,16 @@
 # dsh-postman
 
 一个 [dsh（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 插件：
-**给 AI 一套访问线上 Postman 的工具**——查询、新增、修改、删除接口，导出导入集合，扫源码批量补齐。
+**给 AI 一套访问线上 Postman 的工具**——查询、新增、修改、删除接口，导出导入集合。
 
-- 9 个模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_edit` /
-  `postman_rm` / `postman_pull` / `postman_push` / `postman_scan` / `postman_config`
+- 8 个模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_edit` /
+  `postman_rm` / `postman_pull` / `postman_push` / `postman_config`
 - **`/postman-skill` 技能**：像 `/browser-skill` 一样，一句话把整套用法注入当前会话
 - **配置在 dsh 的「设置 → Postman」**：自带客户端半边注册设置分区，`apiKey` 标了
   `role('secret')`，明文不会回传浏览器
-- **不绑定任何具体项目**：源码目录、URL 前缀全部由参数传入，没有写死的路径或端口
+- **只管 Postman，不管源码**：插件里没有任何语言、框架或路由约定的知识。
+  要让 AI 按代码批量加接口，就让它自己读代码（Java / Python / C# / 随便什么），
+  再调 `postman_add` 写进来——怎么读、加什么，是模型和使用者的事
 - 只依赖 `@deepseek-ai/schemastery`（dsh 自带的配置 schema 库），其余全用 Node 内置模块
 
 ## 安装
@@ -160,7 +162,6 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 | `postman_rm` | 按名称删除接口 |
 | `postman_pull` | 导出集合为 Postman v2.1 JSON |
 | `postman_push` | 用本地 JSON 整体覆盖集合 |
-| `postman_scan` | **扫描源码提取路由，报告 / 对比 / 写入集合** |
 | `postman_config` | 查看/设置/清除 API Key |
 
 对话示例：
@@ -217,35 +218,6 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 顶层目录：测试、Attendance、Discipline
 ```
 
-### postman_scan：扫代码生成接口
-
-参数：
-
-| 参数 | 说明 |
-|---|---|
-| `dir` | **必填**。源码根目录（多个根用逗号或分号分隔） |
-| `module` | 只扫某个业务模块（`[Area]` 名） |
-| `collection` | 指定集合名；给出后进入**对比模式** |
-| `import` | `true` 时进入**写入模式**，把缺失接口写进集合 |
-| `folder` | 写入时用的顶层目录（默认 `源码同步`） |
-| `baseUrl` | 写进集合的 URL 前缀；不传时用 `http://localhost` |
-| `limit` | 最多渲染多少条（默认 150） |
-
-三种模式：
-
-1. **报告模式**（只给 `dir`）：列出扫到的全部路由，按模块分组。
-2. **对比模式**（`dir` + `collection`）：与集合内已有请求比对，报告「缺失 / 已存在」。
-3. **写入模式**（再加 `import=true`）：把缺失接口按
-   `源码同步/<模块>/<控制器>/<控制器.方法>` 落进目录，并自动生成请求体骨架。
-
-识别规则（ASP.NET Core 约定路由）：
-
-- 路由模板 `/api/{Area}/{Controller}/{Action}`；模块名取控制器上的 `[Area("...")]`（含 BaseController 继承）
-- 只把**带显式 `[HttpGet]` / `[HttpPost]` / `[HttpPut]` / `[HttpDelete]` / `[HttpPatch]` 的 public 方法**当作 action（支持多动词特性）
-- 描述取 `/// <summary>`；参数文档取 `/// <param name="...">`；请求体骨架按 C# 类型生成
-- `[RightAuthorize("...")]` → 权限备注；`[ExportToFile]` → 导出接口备注
-- 自动跳过 `obj/ bin/ .vs/ .git/ node_modules/ packages/ .build-tmp/`
-
 ## 已知限制
 
 这些是真实使用中观察到的摩擦点（在一次 500+ 请求的集合上实测），**目前不改 API**，
@@ -256,7 +228,7 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 | 每次写操作都会 PUT 整个集合 | Postman API 的 PUT 是整体覆盖 | 工具已自动先 GET 最新版本并备份到 `~/.postman_backup/`，正常使用无感 |
 | `postman_edit` 改请求头是**整份替换**，不是按 key 合并 | 保持语义简单、可预期 | 要保留原有 header 就把它们一并写进 `headers` |
 | `postman_edit` 按**名称**定位，重名时只改第一个匹配 | 名称是唯一对模型友好的标识 | 集合里避免同名请求；必要时先用 `postman_tree` 确认 |
-| `postman_scan` 只认 ASP.NET Core 的约定路由 | 扫描器按 C# 特性/模板解析 | 其它框架先 `postman_pull` 导出，本地改完 `postman_push` |
+| 批量加接口只能逐个调 `postman_add` | 插件刻意不含任何源码解析，只提供单条写入 | 让 AI 读你的代码后自己循环调用。注意每次调用都会 GET + 备份 + PUT 整个集合，集合很大时会慢 |
 | API 端点默认是 `https://api.getpostman.com` | 这是 Postman 的全局默认端点 | 只有 **Enterprise 的 EU 数据驻留**需要换 —— 用环境变量 `POSTMAN_API_BASE`，见下方说明 |
 
 ### 关于 API 端点（为什么不做成配置项）
@@ -314,13 +286,11 @@ dsh-postman/
   src/
     index.js            # 宿主入口：Config schema + 工具 + 技能 + 备用配置页
     postman-api.js      # Postman API 客户端
-    route-scanner.js    # C# 控制器路由扫描器
     schemastery.js      # 稳健加载 @deepseek-ai/schemastery（设置页 schema）
     page.js             # 备用配置页 HTML
   test/
     smoke.js            # 冒烟测试（假 ctx 加载 + 契约校验 + 真实 list 调用）
     edit-and-tree.js    # postman_edit 的 patch 语义 + postman_tree 的 path/limit（22 项断言）
-    scanner.js          # 扫描器单测（内联 fixture，5 组断言）
     settings-page.js    # 命名空间回归：复刻 dsh 的表单投影逻辑跑真实 Config
     client-bundle.js    # 客户端 bundle 单测（假浏览器 + 假 React）
     _runtime.sh         # 三个真启动脚本共用的运行时选择 / 起实例 / 取 token
@@ -342,7 +312,6 @@ npm run check              # node --check 全部源文件（含 client/client.js
 npm test                   # 下面五个单测一起跑
 node test/smoke.js         # 导出契约 + Config + 工具 + 技能 + 设置命名空间 + 路由
 node test/edit-and-tree.js # postman_edit 的 patch 语义 + postman_tree 的 path/limit/截断提示
-node test/scanner.js       # 扫描器单测
 node test/settings-page.js # 命名空间会不会进 describe()（含反向对照）
 node test/client-bundle.js # 客户端 bundle 的注册契约与写入路径
 npm run test:real          # 真启动：宿主路由 + 客户端 bundle 都要过
@@ -387,10 +356,6 @@ bash test/probe-key.sh     # 真启动后看 Key 实际来源（排查配置问�
 > ```
 
 ## 实测参考
-
-在一套多模块 .NET 项目上扫过约 **5000 条路由**（40+ 模块、600+ 控制器，扫描耗时约 10 秒），
-与 Postman 集合比对覆盖率约 **74%**；未匹配的多为第三方服务路径或已变更接口。
-具体数字取决于项目结构与集合新旧，仅供参考。
 
 一次真实会话里的调用分布（从 dsh 会话记录统计，共 450 次工具调用）：
 

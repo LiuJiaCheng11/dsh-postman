@@ -25,9 +25,6 @@ jobs:
       - name: 语法检查
         run: npm run check
 
-      - name: 扫描器单测
-        run: node test/scanner.js
-
       - name: 发布
         run: npm publish --provenance --access public
         env:

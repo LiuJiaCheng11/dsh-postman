@@ -110,19 +110,26 @@ url: https://github.com/LiuJiaCheng11/dsh-postman
 name: LiuJiaCheng11/dsh-postman
 category: tools
 description:
-  en: Manage Postman cloud collections from dsh with 9 tools — list, browse, add, edit and delete requests, and export or overwrite a whole collection.
-  zh: 用 9 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增、修改、删除接口，导出或整体覆盖集合。
+  en: Manage Postman cloud collections from dsh with 8 tools — list, browse, add, edit and delete requests, and export or overwrite a whole collection.
+  zh: 用 8 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增、修改、删除接口，导出或整体覆盖集合。
 ```
 
-> **为什么描述里不提「扫描 ASP.NET Core 控制器」。** 这是刻意去掉的，不是漏了。
-> `postman_scan` 确实存在且能跑，但 `src/route-scanner.js:362` 把路由模板**硬编码**成
-> `/api/${area}/${controllerName}/${action.name}`，只有 host 前缀（`baseUrl`）可配；
-> 该文件头部注释也写明「针对本仓库（Uniwork / `E:\Code\App\App.Business`）的写法」，
-> 还认 `[RightAuthorize]` / `[ExportToFile]` 这些公司自有特性。
-> README 第 259 行已经把「只认 ASP.NET Core 的约定路由」列为已知限制。
-> 一句「scan ASP.NET Core controllers」读起来像通用 ASP.NET 支持，**属于对代码的过度承诺**——
-> 正是官方说的「描述会被当作声明并与代码核对，夸大是主要打回原因」。
-> 描述只需讲清核心能力，**省略不算夸大**；功能本身留在插件与 README 里，自用不受影响。
+> **描述里为什么不提源码扫描。** 因为插件里**已经没有源码扫描了**——`postman_scan`
+> 与 `src/route-scanner.js` 在 0.5.0 期间被整体删除（约 820 行）。
+>
+> 起因是使用者的一句质疑：「操作云端 Postman 跟我本地用什么代码开发没有任何关系，
+> 使用者可能用 Java、Python，这个插件应该是通用的，怎么添加接口那是具体 AI 和使用者的事。」
+> 核对代码后确认这话是对的：那个扫描器把路由模板**硬编码**成
+> `/api/{Area}/{Controller}/{Action}`，只认 C# 特性与一套私有约定，还认
+> `[RightAuthorize]` / `[ExportToFile]` 这类公司自有特性——它服务的是一个具体项目，
+> 不是通用能力。把它写进面向所有人的市场描述，无论怎么措辞都会显得比实际更通用。
+>
+> 现在的分工是：**插件只负责跟 Postman 说话，读代码是模型的活。**
+> AI 用自己读文件的能力去看任何语言的代码，再把结果一条条交给 `postman_add`。
+> 于是描述里也不需要任何限定词——**没有声明，就没有过度承诺**。
+>
+> 这条也适用于以后：市场描述里出现任何框架/平台名之前，先去代码里 grep 一遍
+> 有没有硬编码的约定。有，就别写那个名字。
 
 以下规则来自官方 CI 校验器 [`scripts/lib/entries.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/lib/entries.mjs)
 的 `validateEntries()` 与 [`scripts/check-submission.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/check-submission.mjs)，
@@ -158,8 +165,9 @@ description:
    去 https://github.com/LiuJiaCheng11/dsh-postman 点 About 面板右上角的**齿轮**，
    在弹出的 Edit repository metadata 对话框里，Topics 一行输入 `dsh-plugin` 回车，
    顺带加 `postman` `deepseek-harness`，然后点 Save changes。
-6. **描述必须属实**，会被逐句对照代码核。所以描述里的「9 个工具」必须真有 9 个，
-   提到的能力必须在代码里找得到——`postman_list/tree/add/rm/edit/pull/push/scan/config` 正好 9 个。
+6. **描述必须属实**，会被逐句对照代码核。所以描述里的「8 个工具」必须真有 8 个，
+   提到的能力必须在代码里找得到——`postman_list/tree/add/rm/edit/pull/push/config` 正好 8 个。
+   ⚠️ 数工具数别只数 `TOOL_SPECS`：改完记得同步市场描述里的数字，否则就是描述与代码不符。
    ⚠️ 之前写的是「Zero dependencies / 零依赖」，但 `package.json` 里有
    `@deepseek-ai/schemastery`，**和本仓库 README 第 12 行的说法也自相矛盾**，属于会被打回的夸大，已删掉。
 7. **不与其他条目重复**。列表里已有 `zhousun55-byte__dsh-postman.yml`，但那是**别人的文件上传插件**

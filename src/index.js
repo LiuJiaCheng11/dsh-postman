@@ -5,11 +5,14 @@
  *
  * 把 Postman 云端集合的读写能力作为模型可见工具暴露给 dsh：
  *   postman_list / postman_tree / postman_add / postman_edit / postman_rm /
- *   postman_pull / postman_push / postman_scan / postman_config
+ *   postman_pull / postman_push / postman_config
  *
  * 同时在 webServer 上挂一个配置页（/dsh-postman），用于填写 Postman API Key。
  *
  * 设计取舍：
+ *   - **只管 Postman，不管源码。** 这里刻意不含任何语言/框架/路由约定的知识：
+ *     模型要往集合里加什么，由它自己读代码（Java/Python/C#/随便什么）后决定，
+ *     再调 postman_add 写进来。插件提供能力，判断留给模型与使用者。
  *   - 零外部依赖（只用 node: 内置模块），最大化可移植性与加载成功率；
  *   - 工具定义直接构造 `ToolDefinition` 形状（name/description/parameters/
  *     output/execute），不 import @deepseek-ai/dsh-tools —— register() 只要求
@@ -22,7 +25,6 @@
  */
 
 const api = require('./postman-api.js')
-const scanner = require('./route-scanner.js')
 const { CONFIG_PAGE } = require('./page.js')
 const { loadSchemastery } = require('./schemastery.js')
 
@@ -111,7 +113,7 @@ const SKILL_NAME = 'postman-skill'
 
 /** 技能路由描述，出现在技能目录与斜杠菜单里。 */
 const SKILL_DESCRIPTION =
-  '用 dsh-postman 插件读写线上 Postman 集合：列出集合、查看目录树、新增/删除接口、导出导入 JSON、扫源码补齐接口。'
+  '用 dsh-postman 插件读写线上 Postman 集合：列出集合、查看目录树、新增/修改/删除接口、导出导入 JSON。'
 
 /** 技能资源目录（相对路径按此解析）。 */
 const SKILL_DIR = require('node:path').join(__dirname, '..', 'skill')
@@ -256,29 +258,6 @@ function compileTool(spec, deps) {
   }
 }
 
-// ── 源码扫描辅助 ─────────────────────────────────────────────────────────────
-
-/** 把 URL / 路径归一化成可比较的键（去协议主机、去查询串、去尾斜杠、小写）。 */
-function normalizeRoutePath(raw) {
-  let p = String(raw || '').replace(/^https?:\/\/[^/]+/i, '')
-  p = p.split('?')[0]
-  try {
-    p = decodeURIComponent(p)
-  } catch {
-    /* 保留原样 */
-  }
-  return p.replace(/\/+$/, '').toLowerCase()
-}
-
-/** 解析 dir 参数：支持字符串（逗号/分号/换行分隔）或数组。 */
-function parseRoots(dir) {
-  if (Array.isArray(dir)) return dir.map((d) => String(d).trim()).filter(Boolean)
-  return String(dir || '')
-    .split(/[,;\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
 /**
  * 把 ["Key: Value", ...] 解析成 Postman 的 header 数组。
  * 没有冒号的项直接丢掉（免得把裸字符串塞进集合）。
@@ -299,33 +278,6 @@ function parseHeaders(raw) {
 function guessLanguage(body, explicit) {
   if (typeof explicit === 'string' && explicit !== '') return explicit
   return /^\s*[\[{]/.test(String(body)) ? 'json' : 'text'
-}
-
-/** 在 Postman item 树里按路径逐级取/建目录，返回末级目录的 item 数组。 */
-function ensureFolderChain(items, parts) {
-  let cur = items
-  for (const part of parts) {
-    let node = cur.find((it) => Array.isArray(it.item) && it.name === part)
-    if (!node) {
-      node = { name: part, item: [] }
-      cur.push(node)
-    }
-    cur = node.item
-  }
-  return cur
-}
-
-/** 收集集合里全部请求的归一化路径集合。 */
-function collectCollectionPaths(items, out = new Set()) {
-  for (const it of items || []) {
-    if (Array.isArray(it.item)) collectCollectionPaths(it.item, out)
-    else {
-      const u = it.request && it.request.url
-      const raw = u && typeof u === 'object' ? u.raw : u
-      if (raw) out.add(normalizeRoutePath(raw))
-    }
-  }
-  return out
 }
 
 /** 工具规格集合。 */
@@ -674,133 +626,6 @@ const TOOL_SPECS = [
     },
   },
   {
-    name: 'postman_scan',
-    description:
-      '扫描 C# / ASP.NET Core 源码（*Controller.cs）提取接口路由：按 [Area]/类名/方法名 推导 ' +
-      '/api/{模块}/{控制器}/{方法}，并抽取 HTTP 动词、XML 摘要、参数与权限。' +
-      '给了 collection 就与 Postman 集合对比并列出差异；import=true 时把集合中缺失的接口写入集合。',
-    parameters: {
-      type: 'object',
-      properties: {
-        dir: { type: 'string', description: '源码根目录；多个用逗号或分号分隔。' },
-        module: { type: 'string', description: '只保留某个模块（Area），如 Attendance。' },
-        collection: { type: 'string', description: 'Postman 集合名或 uid；给了就做差异对比。' },
-        import: { type: 'boolean', description: 'true 时把集合缺失的接口写入（默认 false，只报告）。' },
-        folder: { type: 'string', description: '导入时使用的顶层目录名，默认「源码同步」。' },
-        baseUrl: {
-          type: 'string',
-          description: '写入 URL 的前缀（如 http://localhost:8080）。不传时用 http://localhost。',
-        },
-        limit: { type: 'number', description: '清单渲染条数上限，默认 150。' },
-      },
-      required: ['dir'],
-      additionalProperties: false,
-    },
-    async run(args, { key }) {
-      const roots = parseRoots(args.dir)
-      if (roots.length === 0) throw new Error('dir 不能为空。')
-      const limit = Number.isFinite(args.limit) && args.limit > 0 ? Math.floor(args.limit) : 150
-
-      // 1) 扫描（多个根可能重叠，后面按路径去重）
-      const scanned = []
-      const all = []
-      for (const root of roots) {
-        const result = scanner.scanDirectory(root)
-        all.push(...result.routes)
-        scanned.push({
-          root: result.stats.root,
-          count: result.stats.routeCount,
-          controllers: result.stats.controllerFiles,
-          warnings: result.warnings.length,
-        })
-      }
-
-      let list = all
-      if (args.module) {
-        const want = String(args.module).toLowerCase()
-        list = list.filter((r) => r.area.toLowerCase() === want)
-      }
-      const dedup = new Map()
-      for (const r of list) {
-        const k = normalizeRoutePath(r.path)
-        if (!dedup.has(k)) dedup.set(k, r)
-      }
-      list = [...dedup.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-
-      const header = scanned.map((s) => `  ${s.root} → ${s.count} 条 / ${s.controllers} 个控制器`).join('\n')
-
-      // 2) 纯报告模式
-      if (!args.collection) {
-        const byArea = new Map()
-        for (const r of list) byArea.set(r.area, (byArea.get(r.area) || 0) + 1)
-        const areaLines = [...byArea.entries()].sort().map(([a, n]) => `  ${a} (${n})`)
-        return {
-          text: [
-            `扫描完成：${list.length} 条路由${args.module ? `（仅模块 ${args.module}）` : ''}`,
-            header,
-            '',
-            '模块分布：',
-            areaLines.join('\n') || '  （无）',
-            '',
-            '清单：',
-            scanner.renderRoutes(list, limit),
-          ].join('\n'),
-        }
-      }
-
-      // 3) 与集合对比
-      const meta = await api.resolveCollection(key, args.collection)
-      const col = await api.getCollection(key, meta.uid, true)
-      const existing = collectCollectionPaths(col.item || [])
-      const missing = list.filter((r) => !existing.has(normalizeRoutePath(r.path)))
-
-      const lines = [
-        `集合「${meta.name}」已有 ${existing.size} 条路径；源码扫出 ${list.length} 条（去重后）。`,
-        header,
-        '',
-        `✅ 集合里已有：${list.length - missing.length} 条`,
-        `🆕 集合里缺失：${missing.length} 条`,
-      ]
-
-      if (missing.length === 0) {
-        lines.push('', '集合已与源码完全同步，无需补充。')
-        return { text: lines.join('\n') }
-      }
-
-      const byArea = new Map()
-      for (const r of missing) byArea.set(r.area, (byArea.get(r.area) || 0) + 1)
-      lines.push('', '缺失分布：', [...byArea.entries()].sort().map(([a, n]) => `  ${a} (${n})`).join('\n'))
-      lines.push('', '缺失清单：', scanner.renderRoutes(missing, limit))
-
-      if (args.import !== true) {
-        lines.push('', '（当前仅报告。把 import 设为 true 即写入集合。）')
-        return { text: lines.join('\n') }
-      }
-
-      // 4) 写入缺失项：集合 → <folder>/<模块>/<控制器>/<控制器.方法>
-      const baseUrl = String(args.baseUrl || 'http://localhost').replace(/\/+$/, '')
-      const topFolder = String(args.folder || '源码同步')
-      let added = 0
-      for (const r of missing) {
-        const folder = ensureFolderChain(col.item, [topFolder, r.area, r.controller])
-        const sample = scanner.buildSampleBody(r.params)
-        const request = {
-          method: r.verbs[0],
-          header: r.params.length > 0 ? [{ key: 'Content-Type', value: 'application/json' }] : [],
-          url: api.buildUrl(baseUrl + r.path),
-        }
-        if (sample) request.body = { mode: 'raw', raw: sample, options: { raw: { language: 'json' } } }
-        if (col.auth) request.auth = col.auth
-        if (r.summary) request.description = r.summary
-        folder.push({ name: `${r.controller}.${r.action}`, request, response: [] })
-        added += 1
-      }
-      await api.putCollection(key, meta.uid, col)
-      lines.push('', `✅ 已写入 ${added} 条到「${meta.name}」→ ${topFolder}/<模块>/<控制器>/（写前已自动备份）。`)
-      return { text: lines.join('\n') }
-    },
-  },
-  {
     name: 'postman_config',
     description:
       '查看/设置 Postman API Key。action=status 查看当前配置来源；action=set 配合 apiKey 写入；action=clear 清除本地保存的 Key。',
@@ -1096,7 +921,7 @@ module.exports = {
               ' 技能获得完整用法）：postman_list 查看集合、postman_tree 查看结构' +
               '（集合大时用 path 只看某个目录）、postman_add 新增接口、' +
               'postman_edit 就地修改已有接口、postman_rm 删除接口、' +
-              'postman_pull/postman_push 导入导出、postman_scan 扫源码对比并补齐接口。' +
+              'postman_pull/postman_push 导入导出。' +
               '**改已有接口一律用 postman_edit，不要用 rm + add**（后者会丢掉 Tests 脚本、' +
               '示例响应等字段）。若返回「尚未配置 API Key」，' +
               '引导用户到「设置 → postman」填写，不要索要 Key 明文。' +

@@ -33,8 +33,8 @@ url: https://github.com/${OWNER}/${REPO}
 name: ${OWNER}/${REPO}
 category: tools
 description:
-  en: Manage Postman cloud collections from dsh, and scan ASP.NET Core controllers to sync API routes into a collection. Zero dependencies.
-  zh: 在 dsh 里管理 Postman 云端集合，并可扫描 ASP.NET Core 控制器把接口批量同步进集合。零依赖。
+  en: Manage Postman cloud collections from dsh with 8 tools — list, browse, add, edit and delete requests, and export or overwrite a whole collection.
+  zh: 用 8 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增、修改、删除接口，导出或整体覆盖集合。
 YAML
 echo "✓ 市场投稿文件 → ${ENTRY}"
 

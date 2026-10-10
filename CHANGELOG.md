@@ -68,6 +68,28 @@
   而 `package.json` 里有 `@deepseek-ai/schemastery`，本仓库 README 第 12 行写的也是
   「只依赖 `@deepseek-ai/schemastery`」——三者互相矛盾。现在描述只讲功能，不含依赖声明。
 
+### Removed
+
+- **删掉源码扫描：`postman_scan` 工具、`src/route-scanner.js`（445 行）、`test/scanner.js`（189 行），
+  以及只被它使用的 `parseRoots` / `normalizeRoutePath` / `ensureFolderChain` / `collectCollectionPaths`。
+  共约 820 行。工具数 9 → 8。**
+  起因是使用者的一句质疑：「操作云端 Postman 跟我本地用什么代码开发没有任何关系，
+  使用者可能用 Java、Python，这个插件应该是通用的，怎么添加接口那是具体 AI 和使用者的事。」
+  核对代码后确认这话是对的：
+  - 路由模板**硬编码**在 `route-scanner.js:362`：`path: \`/api/${area}/${controllerName}/${action.name}\``，
+    只有 host 前缀（`baseUrl`）可配；
+  - 文件头注释自己写着「针对本仓库（Uniwork / `E:\Code\App\App.Business`）的写法」；
+  - 还认 `[RightAuthorize("...")]` / `[ExportToFile]` 这类**公司自有特性**。
+  它服务的是一个具体项目，不是通用能力。而它一旦进入面向所有人的市场描述，
+  无论怎么措辞都会显得比实际更通用——这正是官方收录规则里说的「描述会被当作声明并与代码核对」。
+  **新的分工：插件只负责跟 Postman 说话，读代码是模型的活。**
+  模型用自己的文件读取能力看任何语言的代码，再把结果一条条交给 `postman_add`。
+  于是描述里也不需要任何限定词——没有声明，就没有过度承诺。
+  代价（已写进 README「已知限制」）：批量加接口只能逐个调 `postman_add`，
+  而每次调用都会 GET + 备份 + PUT 整个集合，集合大时明显变慢。
+  同步更新：`package.json` 的 check/test 脚本与 description、`publish.yml` 的扫描器单测步骤、
+  `client/client.js` 的 intro、README、`skill/SKILL.md`、`scripts/setup-publish.sh` 的模板、市场描述。
+
 ### 投稿准备（对照官方校验器源码逐条核对，非复述 contributing.md）
 
 - `marketplace/LiuJiaCheng11__dsh-postman.yml`：`category: tools`，
