@@ -3,6 +3,17 @@
 本插件要「上线」，需要走完三步：**推 GitHub → 发 npm → 提市场 PR**。
 市场本身不托管代码，它只从 npm 安装、从精选列表读条目。
 
+> **名字已定：`dsh-postman`**（2026-10-10 定）。曾权衡过要不要叫 `postman-bridge`，结论是**不改**：
+> 在 dsh 生态里 `bridge` 已经专指**通道 / 远程接入**类插件 —— `dsh-bridge`（本地会话消息）、
+> `@wenbin_wb/dsh-bridge`（远程控制、扫码接入）、`dsh-bridge-gateway`（隧道网关）、
+> `bridge-dsh` 与 `@shallbay/dsh-bridge-browser`（WebSocket 载体）、`openclaw-dsh-bridge` /
+> `onebox-dsh-bridge`（IM / 手机端接入）、`hermes-dsh-bridge`（把 dsh 暴露成 MCP），
+> npm 上实测 15 个，无一例外。而本插件做的是「注册一组模型可见工具」，
+> 官方对这类插件的命名是 `dsh-tool-*`（`dsh-tool-fs` / `dsh-tool-bash` / `dsh-tool-pwsh`）。
+> 叫 bridge 会让人预期它是传输载体。真想要更贴官方惯例的名字，备选是 `dsh-tool-postman`；
+> 改名成本约 **150 处 / 20 个文件** + profile 重装 + 已存 API Key 迁移，不值当。
+> 三个名字在 npm 上都还没被占用，所以这是「发布前才有的便宜窗口」—— 已过。
+
 ---
 
 ## 0. 先改占位符（一键）
