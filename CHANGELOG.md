@@ -72,6 +72,13 @@
 
 - `marketplace/LiuJiaCheng11__dsh-postman.yml`：`category: tools`，
   `name` 与 `url` 同名，字段只用了白名单内的 `url`/`name`/`category`/`description`。
+- **市场描述里不提「扫描 ASP.NET Core 控制器」——刻意去掉，不是漏了。**
+  `postman_scan` 存在且能跑，但 `src/route-scanner.js:362` 把路由模板硬编码成
+  `/api/${area}/${controllerName}/${action.name}`，只有 `baseUrl` 可配；文件头部注释写明
+  「针对本仓库（Uniwork / `E:\Code\App\App.Business`）的写法」，还认 `[RightAuthorize]` /
+  `[ExportToFile]` 这些公司自有特性；README 第 259 行也把「只认 ASP.NET Core 的约定路由」
+  列为已知限制。一句「scan ASP.NET Core controllers」读起来像通用 ASP.NET 支持，
+  属于对代码的过度承诺。描述只需讲清核心能力，**省略不算夸大**，功能本身保留在插件与 README 里。
 - 新增 `npm run check:marketplace`（`test/marketplace-entry.js`）：把官方
   `scripts/lib/entries.mjs` 的 `validateEntries()` 规则本地跑一遍——字段白名单、
   文件名 slug、`name`/`url` 一致性、category 白名单、`description.en` 必填且单行、

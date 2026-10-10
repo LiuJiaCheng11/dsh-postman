@@ -110,9 +110,19 @@ url: https://github.com/LiuJiaCheng11/dsh-postman
 name: LiuJiaCheng11/dsh-postman
 category: tools
 description:
-  en: Manage Postman cloud collections from dsh with 9 tools — list, browse, add, edit and delete requests, export or overwrite a whole collection, and scan ASP.NET Core controllers to sync their routes into a collection.
-  zh: 用 9 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增、修改、删除接口，导出或整体覆盖集合，并可扫描 ASP.NET Core 控制器把路由同步进集合。
+  en: Manage Postman cloud collections from dsh with 9 tools — list, browse, add, edit and delete requests, and export or overwrite a whole collection.
+  zh: 用 9 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增、修改、删除接口，导出或整体覆盖集合。
 ```
+
+> **为什么描述里不提「扫描 ASP.NET Core 控制器」。** 这是刻意去掉的，不是漏了。
+> `postman_scan` 确实存在且能跑，但 `src/route-scanner.js:362` 把路由模板**硬编码**成
+> `/api/${area}/${controllerName}/${action.name}`，只有 host 前缀（`baseUrl`）可配；
+> 该文件头部注释也写明「针对本仓库（Uniwork / `E:\Code\App\App.Business`）的写法」，
+> 还认 `[RightAuthorize]` / `[ExportToFile]` 这些公司自有特性。
+> README 第 259 行已经把「只认 ASP.NET Core 的约定路由」列为已知限制。
+> 一句「scan ASP.NET Core controllers」读起来像通用 ASP.NET 支持，**属于对代码的过度承诺**——
+> 正是官方说的「描述会被当作声明并与代码核对，夸大是主要打回原因」。
+> 描述只需讲清核心能力，**省略不算夸大**；功能本身留在插件与 README 里，自用不受影响。
 
 以下规则来自官方 CI 校验器 [`scripts/lib/entries.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/lib/entries.mjs)
 的 `validateEntries()` 与 [`scripts/check-submission.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/check-submission.mjs)，
