@@ -23,7 +23,8 @@ description: 用 dsh-postman 插件读写线上 Postman 集合：列出集合、
 |---|---|---|
 | `postman_list` | 列出账号下所有集合（名称 + uid + 请求数） | 无 |
 | `postman_tree` | 展示某集合的目录树与接口清单 | `collection`；可选 `path`（只看某个目录）`limit`（默认 400 行） |
-| `postman_add` | 在指定目录新增接口 | `collection` `name` `url`；可选 `method` `path` `headers` `body` `auth` `createFolder` |
+| `postman_add` | 在指定目录新增**一个**接口 | `collection` `name` `url`；可选 `method` `path` `headers` `body` `language` `description` `auth` `createFolder` |
+| `postman_add_many` | **批量新增**多个接口，整批只提交一次 | `collection` `items`（数组，每项同 `postman_add` 的字段）；可选 `dryRun` `createFolder`（默认 true） |
 | `postman_edit` | **就地修改**已有接口，保留 Tests 脚本/示例响应等字段 | `collection` `name`；可选 `newName` `url` `method` `headers` `body` `language` `clearBody` `description` `auth` |
 | `postman_rm` | 按名称删除接口（递归找第一个匹配） | `collection` `name` |
 | `postman_pull` | 导出集合为本地 Postman v2.1 JSON | `collection` `out` |
@@ -59,33 +60,59 @@ Pre-request/Tests 脚本（`event`）、示例响应（`response`）等字段，
 
 **按代码批量补接口**（源码 → Postman）
 
-本插件**不含任何源码解析**——它只提供单条写入能力。读代码是你的活：
+本插件**不含任何源码解析**——读代码是你的活，插件只负责把结果写进去。
+用 `postman_add_many` 一次提交，别循环调 `postman_add`（那样每加一条都要
+`GET` + 备份 + `PUT` 整个集合，几十条会慢得离谱）：
 
 ```text
-1. 自己读用户的代码（Java / Python / C# / Go / 随便什么），列出要加的接口：
-   名称、HTTP 方法、完整 URL、请求体
-2. 先 postman_tree({ collection: "App" }) 看集合里已有什么，避免重复
-3. 对每个要加的接口调一次 postman_add({ collection, name, url, method, path, body })
+1. 自己读用户的代码（Java / Python / C# / Go / 随便什么），整理成 items：
+   [{ name, url, method, path, body, description }, ...]
+2. postman_tree({ collection: "App" }) 看集合里已有什么，避免重复
+3. 先预演：postman_add_many({ collection, items, dryRun: true })
+   把报告给用户确认
+4. 再真写：postman_add_many({ collection, items })
 ```
+
+`items` 里每项的字段与 `postman_add` 同名同义：
+
+| 字段 | 说明 |
+|---|---|
+| `name` | 必填。接口名称（同目录下不可重名） |
+| `url` | 必填。完整 URL |
+| `method` | 默认 GET |
+| `path` | 目录路径，如 `"Attendance/Leave"`；留空=集合根层 |
+| `headers` | 数组，每项 `"Key: Value"` |
+| `body` / `language` | raw 请求体与其语言（不传按内容猜 json/text） |
+| `description` | 接口说明（可选，适合放代码里的注释） |
+| `auth` | `true` 时继承集合级 auth |
+
+行为要点：
+
+- **同目录同名会被跳过，不覆盖**——结果里会单独列出跳过了哪些，方便你判断
+  「这条已经存在了」还是「我名字写错了」。
+- `path` 指向的目录不存在时**会自动创建**（`createFolder` 默认 true，可关掉），
+  新建了哪些目录会在结果里列出——**目录名打错在这里就能看出来**。
+- 参数不合法（缺 `name` 或 `url`）的项会被跳过并报出第几项，不影响其余项写入。
+- 一条都没写成功时**不会发起 PUT**，集合不受影响。
 
 几条实操建议：
 
-- **先报告再写**：把整理好的接口清单给用户过一眼，确认后再逐个写入。
-- **一次别写太多**：每次 `postman_add` 都会 `GET` + 备份 + `PUT` 整个集合。
-  集合很大时（几百个请求）连续写几十条会明显变慢——分批写，写完用 `postman_tree` 复核。
+- **先 `dryRun` 再写**：预演报告直接给用户看，确认后再真写。
 - **端口不要猜**：URL 前缀（`http://localhost:8080` 之类）问用户，或从用户给的样例里取。
-- **接口的 URL 必须是你自己确认过的**：插件不会替你推导路由，写进去什么就是什么。
+- **URL 必须是你自己确认过的**：插件不会替你推导路由，写进去什么就是什么。
+- 写完用 `postman_tree` 复核。
 
 ## 硬性规则
 
-- **`PUT` 是整体覆盖**：`postman_add` / `postman_edit` / `postman_rm` / `postman_push` 都会先 `GET` 云端最新版本
-  并备份到 `~/.postman_backup/<uid>.json`。不要绕过工具直接发请求。
+- **`PUT` 是整体覆盖**：`postman_add` / `postman_add_many` / `postman_edit` / `postman_rm` / `postman_push`
+  都会先 `GET` 云端最新版本并备份到 `~/.postman_backup/<uid>.json`。不要绕过工具直接发请求。
 - **改已有接口一律用 `postman_edit`**：`postman_edit` 是就地 patch，会保留 `event`（Pre-request/Tests 脚本）、
   `response`（示例响应）、`protocolProfileBehavior` 等它不认识的字段。`rm` + `add` 会把这些**静默丢掉**。
 - **`postman_tree` 输出可能被截断**：默认上限 400 行，被截断时返回末尾会有 `⚠️ 输出已截断` 的显式提示。
   看到提示就改用 `path` 只看某个目录，或调大 `limit`，**不要**当作「树就这么大」。
-- **写操作前必须让用户确认**：删除接口、`postman_push` 覆盖集合、批量 `postman_add`，
+- **写操作前必须让用户确认**：删除接口、`postman_push` 覆盖集合、`postman_add_many` 批量新增，
   都属于破坏性操作，先说明「要改什么、影响多少条」再执行。
+  批量新增优先用 `dryRun: true` 出一份预演报告给用户看。
 - **不要猜集合名**：`postman_list` 拿到真实名称再用。
 - **同目录不可重名**：`postman_add` 遇到同名会报错（想改已有的请用 `postman_edit`）；
   `postman_edit` 的 `newName` 撞到同层已有名字也会报错。

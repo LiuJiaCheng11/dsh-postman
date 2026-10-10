@@ -1,16 +1,17 @@
 # dsh-postman
 
 一个 [dsh（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 插件：
-**给 AI 一套访问线上 Postman 的工具**——查询、新增、修改、删除接口，导出导入集合。
+**给 AI 一套访问线上 Postman 的工具**——查询、新增（单个或批量）、修改、删除接口，导出导入集合。
 
-- 8 个模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_edit` /
-  `postman_rm` / `postman_pull` / `postman_push` / `postman_config`
+- 9 个模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_add_many` /
+  `postman_edit` / `postman_rm` / `postman_pull` / `postman_push` / `postman_config`
 - **`/postman-skill` 技能**：像 `/browser-skill` 一样，一句话把整套用法注入当前会话
 - **配置在 dsh 的「设置 → Postman」**：自带客户端半边注册设置分区，`apiKey` 标了
   `role('secret')`，明文不会回传浏览器
 - **只管 Postman，不管源码**：插件里没有任何语言、框架或路由约定的知识。
   要让 AI 按代码批量加接口，就让它自己读代码（Java / Python / C# / 随便什么），
-  再调 `postman_add` 写进来——怎么读、加什么，是模型和使用者的事
+  整理成一份清单交给 `postman_add_many` 一次写入——**怎么读、加什么是模型和使用者的事，
+  插件只负责跟 Postman 说话**
 - 只依赖 `@deepseek-ai/schemastery`（dsh 自带的配置 schema 库），其余全用 Node 内置模块
 
 ## 安装
@@ -157,7 +158,8 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 |---|---|
 | `postman_list` | 列出全部集合（名称 + uid） |
 | `postman_tree` | 展示某集合的目录树与接口清单；可只 `path` 某个目录，输出过长会**显式报截断** |
-| `postman_add` | 在指定目录新增接口（可自动建目录、继承集合 auth） |
+| `postman_add` | 在指定目录新增**一个**接口（可自动建目录、继承集合 auth） |
+| `postman_add_many` | **批量新增**多个接口；整批只 GET/备份/PUT 一次集合，同名跳过、可 `dryRun` 预演 |
 | `postman_edit` | **就地修改**已有接口：改名 / URL / 方法 / 请求头 / 请求体 / 说明 / auth |
 | `postman_rm` | 按名称删除接口 |
 | `postman_pull` | 导出集合为 Postman v2.1 JSON |
@@ -218,6 +220,48 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 顶层目录：测试、Attendance、Discipline
 ```
 
+### postman_add_many：批量新增接口
+
+**这个工具不理解任何代码。** 它只接受一份**已经整理好的清单**，一次写进集合。
+读代码、推导路由、决定加什么，都是模型自己的事——插件不参与，也不做任何语言假设。
+
+| 参数 | 说明 |
+|---|---|
+| `collection` | **必填**。集合名或 uid |
+| `items` | **必填**。请求数组，每项字段与 `postman_add` 同名同义 |
+| `dryRun` | 为 `true` 时只报告会新增/跳过哪些，**不写入**。默认 false |
+| `createFolder` | 目录不存在时自动创建，**默认 true**（`postman_add` 默认是 false） |
+
+`items` 每一项：
+
+| 字段 | 说明 |
+|---|---|
+| `name` | **必填**。接口名称（同目录下不可重名） |
+| `url` | **必填**。完整 URL |
+| `method` | HTTP 方法，默认 GET |
+| `path` | 目录路径，如 `"Attendance/Leave"`；留空 = 集合根层 |
+| `headers` | 数组，每项形如 `"Key: Value"` |
+| `body` / `language` | raw 请求体与其语言（不传按内容猜 json/text） |
+| `description` | 接口说明（可选） |
+| `auth` | `true` 时继承集合级 auth |
+
+行为：
+
+- **整批只 GET / 备份 / PUT 一次集合**——这是它存在的全部理由。循环调 `postman_add`
+  加 50 条就是 50 次整体 PUT，集合大时会慢得没法用。
+- **同目录同名会跳过，不覆盖**，并在结果里单独列出跳过了哪些。
+  所以「这条早就有了」和「我名字写错了」在报告里是能分开看的。
+- 目录不存在会自动建，**新建了哪些目录也会列出来**——目录名打错在这里就能发现。
+- 缺 `name` 或 `url` 的项会被跳过并报出第几项，不影响其余项。
+- **一条都没写成功时不会发起 PUT**，集合不受影响。
+
+典型用法是先预演再写：
+
+```text
+postman_add_many({ collection: "App", items: [...], dryRun: true })   # 先看报告
+postman_add_many({ collection: "App", items: [...] })                 # 确认后再写
+```
+
 ## 已知限制
 
 这些是真实使用中观察到的摩擦点（在一次 500+ 请求的集合上实测），**目前不改 API**，
@@ -228,7 +272,7 @@ profile 的 patch 文件（`documentPath === profileContext.patchPath`），写�
 | 每次写操作都会 PUT 整个集合 | Postman API 的 PUT 是整体覆盖 | 工具已自动先 GET 最新版本并备份到 `~/.postman_backup/`，正常使用无感 |
 | `postman_edit` 改请求头是**整份替换**，不是按 key 合并 | 保持语义简单、可预期 | 要保留原有 header 就把它们一并写进 `headers` |
 | `postman_edit` 按**名称**定位，重名时只改第一个匹配 | 名称是唯一对模型友好的标识 | 集合里避免同名请求；必要时先用 `postman_tree` 确认 |
-| 批量加接口只能逐个调 `postman_add` | 插件刻意不含任何源码解析，只提供单条写入 | 让 AI 读你的代码后自己循环调用。注意每次调用都会 GET + 备份 + PUT 整个集合，集合很大时会慢 |
+| `postman_add_many` 遇到同目录同名请求会**跳过**，不更新它 | 批量覆盖已有内容风险太高，不做隐式更新 | 要改已有的用 `postman_edit`；跳过哪些会在结果里列出 |
 | API 端点默认是 `https://api.getpostman.com` | 这是 Postman 的全局默认端点 | 只有 **Enterprise 的 EU 数据驻留**需要换 —— 用环境变量 `POSTMAN_API_BASE`，见下方说明 |
 
 ### 关于 API 端点（为什么不做成配置项）

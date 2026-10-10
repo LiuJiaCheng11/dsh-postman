@@ -50,7 +50,7 @@
   },
   "scripts": {
     "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/schemastery.js && node --check src/page.js && node --check client/client.js",
-    "test": "node test/smoke.js && node test/api-base.js && node test/edit-and-tree.js && node test/settings-page.js && node test/client-bundle.js",
+    "test": "node test/smoke.js && node test/api-base.js && node test/edit-and-tree.js && node test/add-many.js && node test/settings-page.js && node test/client-bundle.js",
     "test:real": "bash test/realstart.sh 3099 && bash test/client-served.sh 3098",
     "test:client": "bash test/client-served.sh 3097",
     "check:marketplace": "node test/marketplace-entry.js",

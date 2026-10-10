@@ -36,6 +36,18 @@
 - `test/api-base.js`：6 项断言。默认值、覆盖生效、尾部斜杠归一、空值回退，
   以及一条**真实请求验证**（把端点指到 `127.0.0.1:1`，确认 `call()` 走的是 `resolveBase()`
   而不是那个常量）。
+- **`postman_add_many`：批量新增接口。** 一次收下整份清单（`items` 数组，每项字段与
+  `postman_add` 同名同义），**整批只 `GET` + 备份 + `PUT` 一次集合**——比循环调 `postman_add`
+  快得多，这正是它存在的理由。同目录下已有同名请求会**跳过**（不覆盖已有内容）并在结果里列出；
+  `dryRun=true` 只报告不写入；`createFolder` 默认 `true`（单个 `postman_add` 默认 `false`，
+  因为批量的清单通常来自一次完整的代码梳理，建目录是预期行为）。
+  **插件里零解析逻辑**：清单由模型读代码后整理好传进来，它不推导路由、不认识任何语言或框架
+  ——与删掉扫描器后确立的分工一致。与 `postman_add` 共用 `buildRequest()` / `ensureFolderChain()`，
+  两个工具生成的 request 形状由构造保证一致。
+- `test/add-many.js`：19 项断言。同样用内存假云端替换网络入口，重点验证**整批只 PUT 一次**
+  这条性能契约，以及同名跳过、不合法项跳过并报出第几项、多级目录自动创建、`dryRun` 不写入、
+  字段透传（含 `auth` 继承）、与 `postman_add` 生成的 request 形状一致。
+  最后一条断言会读市场描述里的工具数并与实际注册数比对，防止描述与代码脱节。
 
 ### Changed
 
@@ -71,8 +83,8 @@
 ### Removed
 
 - **删掉源码扫描：`postman_scan` 工具、`src/route-scanner.js`（445 行）、`test/scanner.js`（189 行），
-  以及只被它使用的 `parseRoots` / `normalizeRoutePath` / `ensureFolderChain` / `collectCollectionPaths`。
-  共约 820 行。工具数 9 → 8。**
+  以及只被它使用的 `parseRoots` / `normalizeRoutePath` / `collectCollectionPaths`。共约 820 行。
+  工具数 9 → 8（随后按使用者要求加回批量工具 `postman_add_many`，见 Added，最终仍是 9）。**
   起因是使用者的一句质疑：「操作云端 Postman 跟我本地用什么代码开发没有任何关系，
   使用者可能用 Java、Python，这个插件应该是通用的，怎么添加接口那是具体 AI 和使用者的事。」
   核对代码后确认这话是对的：
@@ -83,10 +95,10 @@
   它服务的是一个具体项目，不是通用能力。而它一旦进入面向所有人的市场描述，
   无论怎么措辞都会显得比实际更通用——这正是官方收录规则里说的「描述会被当作声明并与代码核对」。
   **新的分工：插件只负责跟 Postman 说话，读代码是模型的活。**
-  模型用自己的文件读取能力看任何语言的代码，再把结果一条条交给 `postman_add`。
-  于是描述里也不需要任何限定词——没有声明，就没有过度承诺。
-  代价（已写进 README「已知限制」）：批量加接口只能逐个调 `postman_add`，
-  而每次调用都会 GET + 备份 + PUT 整个集合，集合大时明显变慢。
+  模型用自己的文件读取能力看任何语言的代码，再把结果交给写入工具（单个 `postman_add`
+  或整批 `postman_add_many`）。于是描述里也不需要任何限定词——没有声明，就没有过度承诺。
+  （`ensureFolderChain` 没有被删——它被抽出来给 `postman_add` / `postman_add_many` 共用，
+  替换掉了原先内联在 `postman_add` 里的那段建目录代码。）
   同步更新：`package.json` 的 check/test 脚本与 description、`publish.yml` 的扫描器单测步骤、
   `client/client.js` 的 intro、README、`skill/SKILL.md`、`scripts/setup-publish.sh` 的模板、市场描述。
 

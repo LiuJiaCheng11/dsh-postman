@@ -110,8 +110,8 @@ url: https://github.com/LiuJiaCheng11/dsh-postman
 name: LiuJiaCheng11/dsh-postman
 category: tools
 description:
-  en: Manage Postman cloud collections from dsh with 8 tools — list, browse, add, edit and delete requests, and export or overwrite a whole collection.
-  zh: 用 8 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增、修改、删除接口，导出或整体覆盖集合。
+  en: Manage Postman cloud collections from dsh with 9 tools — list, browse, add one or many requests, edit and delete them, and export or overwrite a whole collection.
+  zh: 用 9 个工具在 dsh 里管理 Postman 云端集合——列出、浏览、新增（单个或批量）、修改、删除接口，导出或整体覆盖集合。
 ```
 
 > **描述里为什么不提源码扫描。** 因为插件里**已经没有源码扫描了**——`postman_scan`
@@ -165,9 +165,10 @@ description:
    去 https://github.com/LiuJiaCheng11/dsh-postman 点 About 面板右上角的**齿轮**，
    在弹出的 Edit repository metadata 对话框里，Topics 一行输入 `dsh-plugin` 回车，
    顺带加 `postman` `deepseek-harness`，然后点 Save changes。
-6. **描述必须属实**，会被逐句对照代码核。所以描述里的「8 个工具」必须真有 8 个，
-   提到的能力必须在代码里找得到——`postman_list/tree/add/rm/edit/pull/push/config` 正好 8 个。
+6. **描述必须属实**，会被逐句对照代码核。所以描述里的「9 个工具」必须真有 9 个，
+   提到的能力必须在代码里找得到——`postman_list/tree/add/add_many/rm/edit/pull/push/config` 正好 9 个。
    ⚠️ 数工具数别只数 `TOOL_SPECS`：改完记得同步市场描述里的数字，否则就是描述与代码不符。
+   （`test/add-many.js` 里最后一条断言会读市场描述里的数字并与实际注册数比对，别改漏。）
    ⚠️ 之前写的是「Zero dependencies / 零依赖」，但 `package.json` 里有
    `@deepseek-ai/schemastery`，**和本仓库 README 第 12 行的说法也自相矛盾**，属于会被打回的夸大，已删掉。
 7. **不与其他条目重复**。列表里已有 `zhousun55-byte__dsh-postman.yml`，但那是**别人的文件上传插件**

@@ -44,7 +44,7 @@ window.__ModuleLoader__.load({
     const zh = {
       nav: 'Postman',
       title: 'Postman',
-      intro: 'dsh-postman 插件用它访问线上 Postman 集合：列出集合、查看目录树、新增/修改/删除接口、导入导出。',
+      intro: 'dsh-postman 插件用它访问线上 Postman 集合：列出集合、查看目录树、新增/批量新增/修改/删除接口、导入导出。',
       keyLabel: 'Postman API Key',
       keyHint: '在 Postman 账号设置 → API Keys 生成，PMAK- 开头。留空则依次回退到 ~/.dsh/dsh-postman/config.json、~/.postman_api_key、POSTMAN_API_KEY 环境变量。',
       keyPlaceholder: '粘贴 PMAK-... 开头的 Key',
@@ -65,7 +65,7 @@ window.__ModuleLoader__.load({
     const en = {
       nav: 'Postman',
       title: 'Postman',
-      intro: 'The dsh-postman plugin uses this key to work with your Postman cloud collections: list collections, inspect the tree, add/remove requests, import/export, and scan source code.',
+      intro: 'The dsh-postman plugin uses this key to work with your Postman cloud collections: list collections, inspect the tree, add (single or in bulk), edit and remove requests, and import/export.',
       keyLabel: 'Postman API Key',
       keyHint: 'Create one at Postman account settings → API Keys (starts with PMAK-). Left empty, the plugin falls back to ~/.dsh/dsh-postman/config.json, ~/.postman_api_key, then the POSTMAN_API_KEY environment variable.',
       keyPlaceholder: 'Paste a PMAK-... key',

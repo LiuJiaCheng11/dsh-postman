@@ -113,7 +113,7 @@ const SKILL_NAME = 'postman-skill'
 
 /** 技能路由描述，出现在技能目录与斜杠菜单里。 */
 const SKILL_DESCRIPTION =
-  '用 dsh-postman 插件读写线上 Postman 集合：列出集合、查看目录树、新增/修改/删除接口、导出导入 JSON。'
+  '用 dsh-postman 插件读写线上 Postman 集合：列出集合、查看目录树、新增/批量新增/修改/删除接口、导出导入 JSON。'
 
 /** 技能资源目录（相对路径按此解析）。 */
 const SKILL_DIR = require('node:path').join(__dirname, '..', 'skill')
@@ -280,6 +280,57 @@ function guessLanguage(body, explicit) {
   return /^\s*[\[{]/.test(String(body)) ? 'json' : 'text'
 }
 
+/**
+ * 在 Postman item 树里按路径逐级取/建目录，返回末级目录的 item 数组。
+ * `postman_add` 与 `postman_add_many` 共用。
+ * @param {Array<object>} items 集合的顶层 item 数组。
+ * @param {string[]} parts 目录名逐级数组，如 ['Attendance','Leave']。
+ * @returns {Array<object>} 末级目录的 item 数组（不存在则已创建）。
+ */
+function ensureFolderChain(items, parts) {
+  let cur = items
+  for (const part of parts) {
+    let node = cur.find((it) => Array.isArray(it.item) && it.name === part)
+    if (!node) {
+      node = { name: part, item: [] }
+      cur.push(node)
+    }
+    cur = node.item
+  }
+  return cur
+}
+
+/**
+ * 从参数构造一个 Postman request 对象。
+ * `postman_add` 与 `postman_add_many` 共用，避免两处实现各改一半。
+ * @param {object} spec 含 url/method/headers/body/language/description/auth 的参数。
+ * @param {object|undefined} collectionAuth 集合级 auth（spec.auth 为 true 时继承）。
+ * @returns {object} Postman v2.1 的 request 对象。
+ */
+function buildRequest(spec, collectionAuth) {
+  const request = {
+    method: String(spec.method || 'GET').toUpperCase(),
+    header: parseHeaders(spec.headers),
+    url: api.buildUrl(spec.url),
+  }
+  if (typeof spec.body === 'string' && spec.body !== '') {
+    const lang = guessLanguage(spec.body, spec.language)
+    request.body = { mode: 'raw', raw: spec.body, options: { raw: { language: lang } } }
+  }
+  if (spec.auth === true && collectionAuth) request.auth = collectionAuth
+  if (typeof spec.description === 'string' && spec.description !== '') {
+    request.description = spec.description
+  }
+  return request
+}
+
+/** 把数组渲染成带条数上限的多行文本，超出部分只报数量。 */
+function renderCapped(list, cap = 30) {
+  const shown = list.slice(0, cap).map((s) => `  ${s}`)
+  if (list.length > cap) shown.push(`  …等共 ${list.length} 条`)
+  return shown.join('\n')
+}
+
 /** 工具规格集合。 */
 const TOOL_SPECS = [
   {
@@ -364,7 +415,8 @@ const TOOL_SPECS = [
     description:
       '在指定 Postman 集合的某个目录下新增一个接口请求。写操作前会自动拉取最新版本并备份。' +
       'path 支持多级（如 "测试" 或 "Attendance/Leave"），留空表示加到集合根层；目录不存在时可自动创建。' +
-      '同目录下已有同名请求时会报错 —— 想改已有的请用 postman_edit。',
+      '同目录下已有同名请求时会报错 —— 想改已有的请用 postman_edit。' +
+      '要一次加很多个请用 postman_add_many（整批只拉取/提交一次集合）。',
     parameters: {
       type: 'object',
       properties: {
@@ -380,6 +432,7 @@ const TOOL_SPECS = [
         },
         body: { type: 'string', description: 'raw 请求体文本（可选）。' },
         language: { type: 'string', description: 'body 语言，默认按内容猜 json/text。' },
+        description: { type: 'string', description: '接口说明（可选）。' },
         auth: { type: 'boolean', description: '为 true 时继承集合级 auth（如 oauth2）。' },
         createFolder: { type: 'boolean', description: '目录不存在时自动创建，默认 false。' },
       },
@@ -395,49 +448,151 @@ const TOOL_SPECS = [
       let target = items
       const folderPath = args.path ? String(args.path) : ''
       if (folderPath) {
-        let folder = api.findFolder(items, folderPath)
-        if (!folder) {
+        const existing = api.findFolder(items, folderPath)
+        if (existing) {
+          target = existing.item
+        } else {
           if (!args.createFolder) {
             throw new Error(`目录不存在：${folderPath}（把 createFolder 设为 true 可自动创建）`)
           }
-          let cur = items
-          for (const part of folderPath.split('/').filter((p) => p !== '')) {
-            let next = cur.find((it) => Array.isArray(it.item) && it.name === part)
-            if (!next) {
-              next = { name: part, item: [] }
-              cur.push(next)
-            }
-            cur = next.item
-          }
-          folder = api.findFolder(items, folderPath)
+          target = ensureFolderChain(items, folderPath.split('/').filter((p) => p !== ''))
         }
-        target = folder.item
       }
 
       if (api.findRequestShallow(target, args.name)) {
         throw new Error(`该目录下已存在同名请求：${args.name}`)
       }
 
-      const headers = parseHeaders(args.headers)
-
-      const request = {
-        method: String(args.method || 'GET').toUpperCase(),
-        header: headers,
-        url: api.buildUrl(args.url),
-      }
-
-      if (typeof args.body === 'string' && args.body !== '') {
-        const lang = guessLanguage(args.body, args.language)
-        request.body = { mode: 'raw', raw: args.body, options: { raw: { language: lang } } }
-      }
-      if (args.auth === true && col.auth) request.auth = col.auth
-
-      target.push({ name: args.name, request, response: [] })
+      target.push({ name: args.name, request: buildRequest(args, col.auth), response: [] })
       await api.putCollection(key, meta.uid, col)
       const after = api.countRequests(col.item || [])
       return {
         text: `已新增「${args.name}」到 ${folderPath || '集合根层'}（${meta.name}）；请求数 ${before} → ${after}。`,
       }
+    },
+  },
+  {
+    name: 'postman_add_many',
+    description:
+      '一次往集合里新增多个接口请求（批量版 postman_add）。整批只拉取、备份、提交一次集合，' +
+      '比循环调用 postman_add 快得多。**items 由你读代码后整理好传进来** —— 本插件不解析源码、' +
+      '不推导路由、不认识任何语言或框架，写进去什么就是什么。' +
+      '同目录下已有同名请求会被**跳过**（不覆盖已有内容），并在结果里列出。' +
+      'dryRun=true 时只报告会新增/跳过哪些，不写入。',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string', description: '集合名称或 uid。' },
+        items: {
+          type: 'array',
+          description: '要新增的请求列表；每项字段与 postman_add 同名同义。',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: '接口名称（同一目录下不可重名）。' },
+              url: { type: 'string', description: '完整请求 URL。' },
+              method: { type: 'string', description: 'HTTP 方法，默认 GET。' },
+              path: {
+                type: 'string',
+                description: '目录路径，如 "Attendance/Leave"；留空=集合根层。',
+              },
+              headers: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '请求头，每项形如 "Key: Value"。',
+              },
+              body: { type: 'string', description: 'raw 请求体文本（可选）。' },
+              language: { type: 'string', description: 'body 语言，默认按内容猜 json/text。' },
+              description: { type: 'string', description: '接口说明（可选）。' },
+              auth: { type: 'boolean', description: '为 true 时继承集合级 auth。' },
+            },
+            required: ['name', 'url'],
+            additionalProperties: false,
+          },
+        },
+        dryRun: { type: 'boolean', description: '为 true 时只报告、不写入，默认 false。' },
+        createFolder: { type: 'boolean', description: '目录不存在时自动创建，默认 true。' },
+      },
+      required: ['collection', 'items'],
+      additionalProperties: false,
+    },
+    async run(args, { key }) {
+      const specs = Array.isArray(args.items) ? args.items : []
+      if (specs.length === 0) throw new Error('items 为空，没有要新增的请求。')
+
+      const meta = await api.resolveCollection(key, args.collection)
+      const col = await api.getCollection(key, meta.uid, true)
+      const items = col.item || []
+      const before = api.countRequests(items)
+      const createFolder = args.createFolder !== false
+      const dryRun = args.dryRun === true
+
+      const added = []
+      const skipped = []
+      const problems = []
+      const createdFolders = []
+
+      for (let i = 0; i < specs.length; i += 1) {
+        const spec = specs[i] || {}
+        const name = String(spec.name || '').trim()
+        const url = String(spec.url || '').trim()
+        if (!name || !url) {
+          problems.push(`第 ${i + 1} 项：name 与 url 都必填`)
+          continue
+        }
+
+        const folderPath = spec.path ? String(spec.path) : ''
+        let target = items
+        if (folderPath) {
+          const existing = api.findFolder(items, folderPath)
+          if (existing) {
+            target = existing.item
+          } else {
+            if (!createFolder) {
+              problems.push(`第 ${i + 1} 项：目录不存在 ${folderPath}（createFolder=false）`)
+              continue
+            }
+            target = ensureFolderChain(items, folderPath.split('/').filter((p) => p !== ''))
+            createdFolders.push(folderPath)
+          }
+        }
+
+        if (api.findRequestShallow(target, name)) {
+          skipped.push(folderPath ? `${folderPath}/${name}` : name)
+          continue
+        }
+
+        target.push({ name, request: buildRequest(spec, col.auth), response: [] })
+        added.push(folderPath ? `${folderPath}/${name}` : name)
+      }
+
+      const lines = []
+      if (dryRun) lines.push(`【预演，未写入】集合「${meta.name}」当前 ${before} 个请求。`)
+      if (added.length > 0) {
+        lines.push(`${dryRun ? '将新增' : '✅ 已新增'} ${added.length} 条：`, renderCapped(added))
+      }
+      if (createdFolders.length > 0) {
+        const uniq = [...new Set(createdFolders)]
+        lines.push(`${dryRun ? '将新建' : '📁 新建'}目录 ${uniq.length} 个：${uniq.join('、')}`)
+      }
+      if (skipped.length > 0) {
+        lines.push(`⏭️ 跳过 ${skipped.length} 条（同目录已有同名，未覆盖）：`, renderCapped(skipped))
+      }
+      if (problems.length > 0) {
+        lines.push(`⚠️ 忽略 ${problems.length} 条不合法项：`, renderCapped(problems))
+      }
+
+      if (dryRun) return { text: lines.join('\n') }
+
+      if (added.length === 0) {
+        lines.push('没有写入任何请求，集合未改动。')
+        return { text: lines.join('\n') }
+      }
+
+      await api.putCollection(key, meta.uid, col)
+      const after = api.countRequests(col.item || [])
+      lines.push(`集合「${meta.name}」请求数 ${before} → ${after}（写前已自动备份）。`)
+      return { text: lines.join('\n') }
     },
   },
   {
@@ -920,6 +1075,7 @@ module.exports = {
               SKILL_NAME +
               ' 技能获得完整用法）：postman_list 查看集合、postman_tree 查看结构' +
               '（集合大时用 path 只看某个目录）、postman_add 新增接口、' +
+              'postman_add_many 批量新增（一次提交，加多个用这个）、' +
               'postman_edit 就地修改已有接口、postman_rm 删除接口、' +
               'postman_pull/postman_push 导入导出。' +
               '**改已有接口一律用 postman_edit，不要用 rm + add**（后者会丢掉 Tests 脚本、' +
