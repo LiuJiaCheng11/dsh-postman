@@ -24,12 +24,154 @@
 const api = require('./postman-api.js')
 const scanner = require('./route-scanner.js')
 const { CONFIG_PAGE } = require('./page.js')
+const { loadSchemastery } = require('./schemastery.js')
 
 /** 工具协作超时预算（ms）。 */
 const TOOL_TIMEOUT_MS = 120000
 
 /** 配置接口允许的最大请求体。 */
 const MAX_BODY_BYTES = 16 * 1024
+
+// ── 设置页（dsh 的「设置 → postman」） ────────────────────────────────────────
+//
+// dsh 的设置页 schema 直接取 `entry.fiber.runtime.Config`（见 @deepseek-ai/dsh-settings
+// 的 `schema(entry)`）。没有这个导出，本插件在设置里就是一个没有表单的空页
+// （`--dump-config-schema` 里表现为 unknownConfig）。
+//
+// apiKey 标 role('secret')，dsh 会在读取时把值抹掉、只回一个 `set: true/false`，
+// 所以 Key 明文不会流到浏览器。写回走 profile 的 user 配置层，插件会被热重载。
+
+/** @type {object|undefined} */
+let Config
+{
+  const z = loadSchemastery()
+  if (z) {
+    try {
+      Config = z.object({
+        apiKey: z
+          .string()
+          .role('secret')
+          .default('')
+          .description(
+            'Postman API Key（PMAK- 开头）。留空则依次回退到 ~/.dsh/dsh-postman/config.json、' +
+              '~/.postman_api_key、POSTMAN_API_KEY 环境变量。'
+          ),
+      })
+    } catch (error) {
+      Config = undefined
+    }
+  }
+}
+
+// ── 技能（斜杠命令 /postman-skill） ──────────────────────────────────────────
+
+/** 技能名（kebab-case，作为 /postman-skill 的标识）。 */
+const SKILL_NAME = 'postman-skill'
+
+/** 技能路由描述，出现在技能目录与斜杠菜单里。 */
+const SKILL_DESCRIPTION =
+  '用 dsh-postman 插件读写线上 Postman 集合：列出集合、查看目录树、新增/删除接口、导出导入 JSON、扫源码补齐接口。'
+
+/** 技能资源目录（相对路径按此解析）。 */
+const SKILL_DIR = require('node:path').join(__dirname, '..', 'skill')
+
+/** 读取技能正文（读不到就返回 null，插件照常工作）。 */
+function readSkillMarkdown() {
+  try {
+    return require('node:fs').readFileSync(require('node:path').join(SKILL_DIR, 'SKILL.md'), 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把技能注册进 dsh 的技能目录。
+ *
+ * 这里同时做「插件级」与「agent 级」两次注册，对齐 `browser-skill-dsh-plugin`
+ * 的做法：DSH 的技能分层是 nearest-first（agent -> preset -> global），
+ * 只在插件级注册时，磁盘上同名的 preset 技能会把它盖掉。
+ * 没有 `skills` 服务（或没有 `agents`）时静默降级。
+ *
+ * @param {object} ctx Cordis 上下文。
+ * @returns {() => void} 释放函数。
+ */
+function armSkill(ctx) {
+  const skills = ctx.get('skills')
+  if (skills === null || skills === undefined || typeof skills.register !== 'function') return () => {}
+  const content = readSkillMarkdown()
+  if (content === null) return () => {}
+
+  const definition = () => ({
+    name: SKILL_NAME,
+    description: SKILL_DESCRIPTION,
+    content,
+    source: 'bundled',
+    resourceBase: { kind: 'directory', path: SKILL_DIR },
+  })
+
+  /** @type {Map<object, () => void>} */
+  const perAgent = new Map()
+  const disposers = []
+
+  // 插件级（global 层）
+  try {
+    const dispose = skills.register(definition())
+    if (typeof dispose === 'function') disposers.push(dispose)
+  } catch {
+    /* ignore */
+  }
+
+  // agent 级：新 agent 走 agent/created，已存在的立刻注册
+  const registerForAgent = (agent) => {
+    if (!agent || perAgent.has(agent)) return
+    const agentSkills = agent.ctx && agent.ctx.get ? agent.ctx.get('skills') : undefined
+    if (agentSkills === null || agentSkills === undefined || typeof agentSkills.register !== 'function') return
+    try {
+      const dispose = agentSkills.register(definition())
+      perAgent.set(agent, typeof dispose === 'function' ? dispose : () => {})
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (typeof ctx.on === 'function') {
+    const stopCreated = ctx.on('agent/created', ({ agent }) => registerForAgent(agent))
+    const stopDisposed = ctx.on('agent/disposed', ({ agent }) => {
+      const dispose = perAgent.get(agent)
+      if (dispose) dispose()
+      perAgent.delete(agent)
+    })
+    disposers.push(stopCreated, stopDisposed)
+  }
+
+  const agents = ctx.get('agents')
+  if (agents !== null && agents !== undefined && typeof agents.list === 'function') {
+    try {
+      for (const agent of agents.list()) registerForAgent(agent)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return () => {
+    for (const dispose of [...perAgent.values()].reverse()) {
+      try {
+        dispose()
+      } catch {
+        /* ignore */
+      }
+    }
+    perAgent.clear()
+    for (const dispose of disposers.reverse()) {
+      try {
+        dispose()
+      } catch {
+        /* ignore */
+      }
+    }
+    disposers.length = 0
+  }
+}
 
 /** 工具输出契约：单个 { text } 渲染成一个 text ContentBlock。 */
 function textOutput() {
@@ -63,9 +205,10 @@ function compileTool(spec, deps) {
       const keyInfo = deps.resolveKey()
       if (!keyInfo.key) {
         throw new Error(
-          '尚未配置 Postman API Key。请打开插件配置页 http://127.0.0.1:' +
+          '尚未配置 Postman API Key。请在 dsh 的「设置 → postman」里填写，' +
+            '或设置 POSTMAN_API_KEY 环境变量（也可以打开 http://127.0.0.1:' +
             deps.port() +
-            '/dsh-postman 填写，或设置 POSTMAN_API_KEY 环境变量。'
+            '/dsh-postman 用备用页填写）。'
         )
       }
       return spec.run(args || {}, { key: keyInfo.key, keySource: keyInfo.source, deps })
@@ -324,7 +467,10 @@ const TOOL_SPECS = [
         collection: { type: 'string', description: 'Postman 集合名或 uid；给了就做差异对比。' },
         import: { type: 'boolean', description: 'true 时把集合缺失的接口写入（默认 false，只报告）。' },
         folder: { type: 'string', description: '导入时使用的顶层目录名，默认「源码同步」。' },
-        baseUrl: { type: 'string', description: '生成 URL 的前缀，默认 http://localhost:10423。' },
+        baseUrl: {
+          type: 'string',
+          description: '写入 URL 的前缀（如 http://localhost:8080）。不传时用 http://localhost。',
+        },
         limit: { type: 'number', description: '清单渲染条数上限，默认 150。' },
       },
       required: ['dir'],
@@ -412,7 +558,7 @@ const TOOL_SPECS = [
       }
 
       // 4) 写入缺失项：集合 → <folder>/<模块>/<控制器>/<控制器.方法>
-      const baseUrl = String(args.baseUrl || 'http://localhost:10423').replace(/\/+$/, '')
+      const baseUrl = String(args.baseUrl || 'http://localhost').replace(/\/+$/, '')
       const topFolder = String(args.folder || '源码同步')
       let added = 0
       for (const r of missing) {
@@ -503,9 +649,15 @@ module.exports = {
   inject: ['tools', 'webServer', 'connection'],
 
   /**
+   * 设置页 schema（dsh 的「设置 → postman」表单）。
+   * 拿不到 schemastery 时为 undefined —— 插件照常工作，只是设置里没有表单。
+   */
+  Config,
+
+  /**
    * 注册工具与配置页。
    * @param {object} ctx Cordis 上下文。
-   * @param {object} [rawConfig] 插件配置（config.apiKey）。
+   * @param {object} [rawConfig] 插件配置（`config.apiKey`，来自设置页或 profile patch）。
    */
   apply(ctx, rawConfig) {
     const pluginConfig = rawConfig && typeof rawConfig === 'object' ? rawConfig : {}
@@ -644,6 +796,34 @@ module.exports = {
       'dsh-postman: config page'
     )
 
+    // ── 设置页命名空间（旧版 dsh 兼容） ──────────────────────────────────────
+    //
+    // dsh 0.1.7+ 直接从插件的 Config schema 派生设置页（见模块顶部的 Config 导出），
+    // 什么都不用做。更早的版本（如 0.1.0-rc.7 ~ 0.1.6）没有派生机制，
+    // 必须显式 `settings.register(ns, schema, { base })`。两套并存不会重复出页：
+    // 新版没有 register，旧版不读 Config。
+    if (Config && typeof ctx.inject === 'function') {
+      try {
+        ctx.inject(['settings'], (scoped) => {
+          const settings = scoped.settings
+          if (settings === null || settings === undefined || typeof settings.register !== 'function') return
+          try {
+            scoped.effect(
+              () => settings.register('dsh-postman', Config, { base: {} }),
+              'dsh-postman: settings namespace'
+            )
+          } catch (error) {
+            warn(`注册设置命名空间失败（旧版 dsh）：${String((error && error.message) || error)}`)
+          }
+        })
+      } catch {
+        /* 没有 settings 服务时忽略 */
+      }
+    }
+
+    // ── 技能：斜杠命令 /postman-skill ────────────────────────────────────────
+    ctx.effect(() => armSkill(ctx), 'dsh-postman: skill')
+
     // ── 系统提示：让模型知道有这套工具 ───────────────────────────────────────
     const systemPrompt = ctx.get('systemPrompt')
     if (systemPrompt !== undefined && typeof systemPrompt.section === 'function') {
@@ -653,9 +833,13 @@ module.exports = {
             name: 'tool:dsh-postman',
             order: 108,
             text:
-              'Postman 工具可用：用 postman_list 查看集合、postman_tree 查看结构、postman_add 新增接口、' +
-              'postman_rm 删除接口、postman_pull/postman_push 导入导出。若返回「尚未配置 API Key」，' +
-              '引导用户打开配置页填写。写操作是整体覆盖，工具已自动先拉取最新版并备份。',
+              'Postman 工具可用（也可用 ' +
+              SKILL_NAME +
+              ' 技能获得完整用法）：postman_list 查看集合、postman_tree 查看结构、' +
+              'postman_add 新增接口、postman_rm 删除接口、postman_pull/postman_push 导入导出、' +
+              'postman_scan 扫源码对比并补齐接口。若返回「尚未配置 API Key」，' +
+              '引导用户到「设置 → postman」填写，不要索要 Key 明文。' +
+              '写操作是整体覆盖，工具已自动先拉取最新版并备份；破坏性操作前先向用户确认。',
           }),
         'dsh-postman: system prompt section'
       )
@@ -664,8 +848,8 @@ module.exports = {
     const current = api.resolveApiKey(pluginConfig)
     info(
       current.key
-        ? `已就绪，API Key 来源：${current.source}；配置页 http://127.0.0.1:${deps.port()}/dsh-postman`
-        : `已加载但尚未配置 API Key；请在 http://127.0.0.1:${deps.port()}/dsh-postman 填写`
+        ? `已就绪，API Key 来源：${current.source}；设置入口：dsh「设置 → postman」`
+        : '已加载但尚未配置 API Key；请在 dsh「设置 → postman」填写'
     )
   },
 }

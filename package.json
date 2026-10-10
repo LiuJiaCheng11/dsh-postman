@@ -1,7 +1,7 @@
 {
   "name": "dsh-postman",
-  "version": "0.2.0",
-  "description": "dsh 插件 · Postman 云端集合管理：列出/查看/新增/删除接口，扫 C# 源码自动同步接口，内置配置页填写 Postman API Key。零外部依赖。",
+  "version": "0.3.0",
+  "description": "dsh 插件 · Postman 云端集合管理：让 AI 查询/新增/删除接口、扫源码自动同步，内置 /postman-skill 技能与「设置 → postman」配置页。",
   "license": "MIT",
   "type": "commonjs",
   "main": "src/index.js",
@@ -13,6 +13,7 @@
   },
   "files": [
     "src",
+    "skill",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",
@@ -39,10 +40,13 @@
     }
   },
   "scripts": {
-    "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/route-scanner.js && node --check src/page.js",
+    "check": "node --check src/index.js && node --check src/postman-api.js && node --check src/route-scanner.js && node --check src/schemastery.js && node --check src/page.js",
     "test": "node test/smoke.js && node test/scanner.js",
     "test:real": "bash test/realstart.sh",
     "prepublishOnly": "npm run check && npm test"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.0"
   },
   "publishConfig": {
     "access": "public",

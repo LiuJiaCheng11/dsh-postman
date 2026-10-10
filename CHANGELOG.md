@@ -3,6 +3,33 @@
 本文件记录 dsh-postman 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] — 2026-10-10
+
+### Added
+
+- **设置页**：插件现在导出 `Config` schema，dsh 会在 **设置 → postman** 里渲染表单，
+  直接在设置里填 Postman API Key（不再需要打开独立网页）。
+  - `apiKey` 标 `role('secret')`，读取时值被抹除，明文不回流浏览器
+  - 兼容 dsh < 0.1.7：那套版本没有 Config 派生机制，改用 `settings.register()` 注册命名空间
+  - 新增 `src/schemastery.js`：稳健加载 `@deepseek-ai/schemastery`
+    （插件以 `link:` 安装时按真实路径解析不到 profile 里的包，这里按多锚点回退）
+- **`/postman-skill` 技能**：注册运行时技能（插件级 + agent 级，对齐 `browser-skill-dsh-plugin`），
+  正文在 `skill/SKILL.md`，含工具表、典型流程与破坏性操作的前置确认规则
+
+### Changed
+
+- `postman_scan` 的 `baseUrl` 默认值从 `http://localhost:10423` 改为 `http://localhost`
+  —— 去掉对特定项目的隐含绑定，端口一律由调用方传入
+- 工具报错信息改为引导到「设置 → postman」而不是独立配置页
+- 系统提示补充 `postman_scan` 与技能名，并加入「不要索要 Key 明文」的约束
+- `README` 全面重写；实测数据改为泛化描述（不再绑定具体项目路径）
+
+### Fixed
+
+- 修复插件在 dsh 设置里显示但**没有表单、无法配置**的问题：
+  根因是模块未导出 `Config`，`--dump-config-schema` 里该条目为 `unknownConfig`，
+  设置页拿不到 schema 可渲染
+
 ## [0.2.0] — 2026-10-10
 
 首个发布版本。

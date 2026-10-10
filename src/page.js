@@ -74,6 +74,14 @@ const CONFIG_PAGE = `<!doctype html>
   </header>
   <p class="sub">让 dsh 直接读写你的 Postman 云端集合</p>
 
+  <div class="card" style="border-left:3px solid #4f46e5">
+    <h2>推荐入口</h2>
+    <p class="hint" style="margin:0">
+      直接在 dsh 里打开 <strong>设置 → postman</strong> 填写 Key 更顺手（值标了 <code>secret</code>，
+      不会回传到浏览器）。本页是等价的备用入口，也可以在这里保存和验证。
+    </p>
+  </div>
+
   <div class="card">
     <h2>当前状态</h2>
     <div class="meta" id="state">读取中…</div>

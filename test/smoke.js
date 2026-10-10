@@ -13,6 +13,15 @@ const plugin = require('../src/index.js')
 const registered = []
 const routes = []
 const effects = []
+const skills = []
+const listeners = []
+
+const fakeSkills = {
+  register(def) {
+    skills.push(def)
+    return () => {}
+  },
+}
 
 const fakeCtx = {
   logger: {
@@ -24,6 +33,10 @@ const fakeCtx = {
     effects.push(label)
     const dispose = fn()
     return typeof dispose === 'function' ? dispose : () => {}
+  },
+  on(event, handler) {
+    listeners.push(event)
+    return () => {}
   },
   tools: {
     register(tool) {
@@ -43,7 +56,8 @@ const fakeCtx = {
       return undefined
     },
   },
-  get() {
+  get(name) {
+    if (name === 'skills') return fakeSkills
     return undefined
   },
 }
@@ -55,10 +69,19 @@ assert.strictEqual(typeof plugin.apply, 'function', 'apply 必须是函数')
 assert.deepStrictEqual(plugin.inject, ['tools', 'webServer', 'connection'])
 console.log('   name =', plugin.name, '| inject =', plugin.inject.join(', '))
 
+// Config 是 dsh「设置 → postman」表单的来源（@deepseek-ai/dsh-settings 取
+// entry.fiber.runtime.Config）。缺了它，设置里那一项就是没有表单的空页。
+assert.ok(plugin.Config, '必须导出 Config（设置页 schema）')
+assert.strictEqual(typeof plugin.Config.toJSON, 'function', 'Config 必须是 schemastery schema')
+const configJson = JSON.stringify(plugin.Config.toJSON())
+assert.ok(configJson.includes('apiKey'), 'Config 必须声明 apiKey 字段')
+assert.ok(configJson.includes('"role":"secret"'), 'apiKey 必须标 role=secret（避免明文回流浏览器）')
+console.log('   ✓ Config 导出（apiKey, role=secret）')
+
 console.log('\n2) apply() 执行')
 plugin.apply(fakeCtx, {})
 console.log('   effect 数量 =', effects.length, effects)
-assert.ok(effects.length >= 2, '至少注册 tools 与 config page 两个 effect')
+assert.ok(effects.length >= 3, '至少注册 tools / config page / skill 三个 effect')
 
 /**
  * 模拟 dsh-tools 的 assertSupportedJsonSchema：校验受支持子集。
@@ -127,7 +150,20 @@ assert.strictEqual(route.kind, 'prefix')
 assert.strictEqual(typeof route.handler, 'function')
 console.log('   ✓ prefix /dsh-postman')
 
-console.log('\n5) 端到端：postman_list 真实调用')
+console.log('\n5) 技能注册（/postman-skill）')
+assert.ok(skills.length >= 1, `期望注册 >=1 个技能，实际 ${skills.length}`)
+const skill = skills.find((s) => s.name === 'postman-skill')
+assert.ok(skill, '必须注册名为 postman-skill 的技能')
+assert.strictEqual(typeof skill.description, 'string')
+assert.ok(skill.description.length > 0, '技能必须有描述（斜杠菜单显示）')
+assert.strictEqual(typeof skill.content, 'string')
+assert.ok(skill.content.includes('postman_list'), '技能正文应包含工具说明')
+assert.strictEqual(skill.source, 'bundled')
+assert.ok(skill.resourceBase && skill.resourceBase.kind === 'directory', 'resourceBase 必须是目录')
+assert.ok(listeners.includes('agent/created'), '应监听 agent/created 做 agent 级注册')
+console.log('   ✓ postman-skill（' + skill.content.length + ' 字节正文，resourceBase=' + skill.resourceBase.path + '）')
+
+console.log('\n6) 端到端：postman_list 真实调用')
 const listTool = registered.find((t) => t.name === 'postman_list')
 listTool
   .execute({})

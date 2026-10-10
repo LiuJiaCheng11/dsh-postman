@@ -1,10 +1,14 @@
 # dsh-postman
 
-一个 [dsh（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 插件：让 dsh 直接读写你的 **Postman 云端集合**。
+一个 [dsh（DeepSeek Harness）](https://github.com/deepseek-ai/deepseek-harness) 插件：
+**给 AI 一套访问线上 Postman 的工具**——查询、新增、删除接口，导出导入集合，扫源码批量补齐。
 
-- 提供模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_rm` / `postman_pull` / `postman_push` / `postman_config`
-- 提供配置页（`http://127.0.0.1:<port>/dsh-postman`）用于填写 Postman API Key
-- **零外部依赖**（只用 Node 内置模块），加载成功率高
+- 8 个模型可见工具：`postman_list` / `postman_tree` / `postman_add` / `postman_rm` /
+  `postman_pull` / `postman_push` / `postman_scan` / `postman_config`
+- **`/postman-skill` 技能**：像 `/browser-skill` 一样，一句话把整套用法注入当前会话
+- **配置在 dsh 的「设置 → postman」**：`apiKey` 标了 `role('secret')`，明文不会回传浏览器
+- **不绑定任何具体项目**：源码目录、URL 前缀全部由参数传入，没有写死的路径或端口
+- 只依赖 `@deepseek-ai/schemastery`（dsh 自带的配置 schema 库），其余全用 Node 内置模块
 
 ## 安装
 
@@ -26,21 +30,35 @@ dsh --profile web --dump-config | grep -i postman
 
 ## 配置 Postman API Key
 
-有三种方式，优先级从高到低：
-
-1. **插件配置**（`cordis.patch.yml` 的 `config.apiKey`，或环境变量 `POSTMAN_API_KEY`）
-2. **插件设置文件** `~/.dsh/dsh-postman/config.json`（配置页写入，权限 0600）
-3. **历史文件** `~/.postman_api_key`
-
-推荐直接打开配置页填写：
-
-```
-http://127.0.0.1:3080/dsh-postman
-```
-
-页面上可以保存、保存并验证、显示/隐藏、清除 Key。
+**推荐：在 dsh 里打开「设置 → postman」**，直接填进表单。值写进 profile 的 user 配置层，
+插件热重载后立即生效；因为标了 `role('secret')`，读取时值被抹掉、只回 `set: true/false`。
 
 在 [Postman 账号设置 → API Keys](https://web.postman.co/settings/me/api-keys) 生成 Key（`PMAK-` 开头）。
+
+留空时的回退顺序：
+
+1. 设置表单里的 `apiKey`（profile user 层）
+2. `~/.dsh/dsh-postman/config.json`（备用页写入，权限 0600）
+3. `~/.postman_api_key`（历史文件）
+4. `POSTMAN_API_KEY` 环境变量
+
+备用页在 `http://127.0.0.1:<port>/dsh-postman`，功能与设置表单等价，多了「保存并验证」。
+
+> 设置页靠插件导出的 `Config` schema 渲染（dsh 侧取 `entry.fiber.runtime.Config`）。
+> 若设置里那一项是空的、没有表单，说明 `Config` 没被解析到——
+> 跑 `dsh --profile web --dump-config-schema` 看 `dsh-postman` 是否指向真实 schema
+> 而不是 `unknownConfig`。
+
+## 技能：/postman-skill
+
+插件注册了一个运行时技能，在输入框敲 `/` 就能看到（与 `browser-skill` 并列）：
+
+```
+/postman-skill
+```
+
+它把这套工具的完整用法（工具表、典型流程、破坏性操作的前置确认规则）注入当前会话。
+不用它也行——系统提示里已带精简说明，直接说「帮我在 Postman 的 App 集合里加个接口」即可。
 
 ## 工具用法
 
@@ -52,20 +70,20 @@ http://127.0.0.1:3080/dsh-postman
 | `postman_rm` | 按名称删除接口 |
 | `postman_pull` | 导出集合为 Postman v2.1 JSON |
 | `postman_push` | 用本地 JSON 整体覆盖集合 |
-| `postman_scan` | **扫描 C# 控制器，报告 / 对比 / 写入 Postman 集合** |
+| `postman_scan` | **扫描源码提取路由，报告 / 对比 / 写入集合** |
 | `postman_config` | 查看/设置/清除 API Key |
 
 对话示例：
 
 > 列出我的 Postman 集合
 >
-> 在 App 的「测试」目录下加一个 GET 接口 http://localhost:10423/api/v1/models
+> 在 App 的「测试」目录下加一个 GET 接口 http://localhost:8080/api/v1/models
 >
 > 把 Converter 集合导出到 D:/tmp/converter.json
 >
-> 扫一下 E:/Code/App/App.Business，看哪些接口还没进 Postman
+> 扫一下 D:/src/MyApi，看哪些接口还没进 Postman
 >
-> 把 E:/Code/App/App.Customization 里没同步的接口写进 App 集合
+> 把 D:/src/MyApi 里没同步的接口写进 App 集合
 
 ### postman_scan：扫代码生成接口
 
@@ -73,13 +91,13 @@ http://127.0.0.1:3080/dsh-postman
 
 | 参数 | 说明 |
 |---|---|
-| `dir` | **必填**。源码根目录（可多次调用扫多个根，或用分号分隔） |
-| `module` | 只扫某个业务模块（如 `App.Attendance`） |
+| `dir` | **必填**。源码根目录（多个根用逗号或分号分隔） |
+| `module` | 只扫某个业务模块（`[Area]` 名） |
 | `collection` | 指定集合名；给出后进入**对比模式** |
 | `import` | `true` 时进入**写入模式**，把缺失接口写进集合 |
-| `folder` | 写入时用的目标目录（默认 `源码同步`） |
-| `baseUrl` | 生成 URL 时替换协议+主机，如 `http://localhost:10423` |
-| `limit` | 最多返回多少条（防止报告过长） |
+| `folder` | 写入时用的顶层目录（默认 `源码同步`） |
+| `baseUrl` | 写进集合的 URL 前缀；不传时用 `http://localhost` |
+| `limit` | 最多渲染多少条（默认 150） |
 
 三种模式：
 
@@ -99,8 +117,9 @@ http://127.0.0.1:3080/dsh-postman
 ## 安全说明
 
 - **PUT 是整体覆盖**：每次写操作前都会先 `GET` 最新云端版本，并备份到 `~/.postman_backup/<uid>.json`。
-- API Key 只存本机，不会外发。
+- API Key 只存本机，不会外发；设置页里标了 `role('secret')`，明文不回流浏览器。
 - 配置接口挂了与 dsh 其它 host 路由一致的信任栅栏（`connection.requestRejection`），拒绝跨站调用。
+- 破坏性操作（删除、覆盖、批量写入）在技能里被要求**先向用户确认**。
 
 ## 目录结构
 
@@ -112,13 +131,16 @@ dsh-postman/
   CHANGELOG.md
   PUBLISHING.md         # 发布指南（GitHub / npm / 插件市场）
   LICENSE
+  skill/
+    SKILL.md            # /postman-skill 的正文
   src/
-    index.js            # 插件入口：注册工具 + 配置页
-    postman-api.js      # Postman API 客户端（零依赖）
-    route-scanner.js    # C# 控制器路由扫描器（零依赖）
-    page.js             # 配置页 HTML
+    index.js            # 插件入口：Config schema + 工具 + 技能 + 配置页
+    postman-api.js      # Postman API 客户端
+    route-scanner.js    # C# 控制器路由扫描器
+    schemastery.js      # 稳健加载 @deepseek-ai/schemastery（设置页 schema）
+    page.js             # 备用配置页 HTML
   test/
-    smoke.js            # 冒烟测试（假 ctx 加载 + 真实 list 调用）
+    smoke.js            # 冒烟测试（假 ctx 加载 + 契约校验 + 真实 list 调用）
     scanner.js          # 扫描器单测（内联 fixture，5 组断言）
     realstart.sh        # 真启动验证（起实例 + 探路由 + 查致命报错）
   scripts/
@@ -131,29 +153,28 @@ dsh-postman/
 
 ```sh
 cd E:/Code/DshPlugins/dsh-postman
-npm run check        # node --check 四个源文件
-node test/smoke.js   # 插件装配 + 工具注册 + 路由
+npm run check        # node --check 五个源文件
+node test/smoke.js   # 导出契约 + Config + 工具 + 技能 + 路由
 node test/scanner.js # 扫描器单测
 npm run test:real    # 真启动一个 dsh web 实例，验证插件能加载且不崩
 ```
 
 > `test:real` 会在空闲端口（默认 3099）拉起一个真实 dsh 实例，探测
 > `/dsh-postman` 是否返回 200，并检查启动日志里有无 `unsupported JSON schema`
-> 之类的致命错误。**改完工具 schema 一定要跑它**——`--dump-config` 只组合 YAML、
-> 不 import 插件，测不出这类问题。
+> 之类的致命错误。**改完工具 schema 或 Config 一定要跑它**——`--dump-config`
+> 只组合 YAML、不 import 插件，测不出这类问题。
+>
+> 设置页 schema 单独验证：
+>
+> ```sh
+> dsh --profile web --dump-config-schema | grep -A5 '"dsh-postman"'
+> ```
 
-## 实测数据
+## 实测参考
 
-在本机 `E:\Code\App` 上的扫描结果（可作为参考）：
-
-| 源码根 | 模块数 | 路由数 |
-|---|---|---|
-| `App.Business` | 46 | 3938 |
-| `20250520/App.Core` | 12 | 560 |
-| `App.Customization` | 15 | 504 |
-
-三根合计约 5000 条路由。与 Postman 内 App 集合（518 请求）比对，覆盖率 **73.6%**（381/518）；
-未匹配的多为第三方服务（如 `/wv/wordviewer/request.pdf`、`/docs/api/local/...`）或已变更接口。
+在一套多模块 .NET 项目上扫过约 **5000 条路由**（40+ 模块、600+ 控制器，扫描耗时约 10 秒），
+与 Postman 集合比对覆盖率约 **74%**；未匹配的多为第三方服务路径或已变更接口。
+具体数字取决于项目结构与集合新旧，仅供参考。
 
 ## 发布
 
