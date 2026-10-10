@@ -30,8 +30,8 @@ dsh --profile web --dump-config | grep -i postman
 
 ## 配置 Postman API Key
 
-**推荐：在 dsh 里打开「设置 → postman」**，直接填进表单。值写进 profile 的 user 配置层，
-插件热重载后立即生效；因为标了 `role('secret')`，读取时值被抹掉、只回 `set: true/false`。
+**推荐：在 dsh 里打开「设置 → postman」**，直接填进表单。因为标了 `role('secret')`，
+读取时值被抹掉、只回 `set: true/false`，明文不回流浏览器。
 
 在 [Postman 账号设置 → API Keys](https://web.postman.co/settings/me/api-keys) 生成 Key（`PMAK-` 开头）。
 
@@ -44,10 +44,24 @@ dsh --profile web --dump-config | grep -i postman
 
 备用页在 `http://127.0.0.1:<port>/dsh-postman`，功能与设置表单等价，多了「保存并验证」。
 
-> 设置页靠插件导出的 `Config` schema 渲染（dsh 侧取 `entry.fiber.runtime.Config`）。
-> 若设置里那一项是空的、没有表单，说明 `Config` 没被解析到——
-> 跑 `dsh --profile web --dump-config-schema` 看 `dsh-postman` 是否指向真实 schema
-> 而不是 `unknownConfig`。
+### 设置页是怎么来的（两代 dsh 都覆盖）
+
+dsh 里并存着**两套**设置服务实现，插件对两套都做了适配，且不会重复出页：
+
+| dsh 版本 | 实现 | 机制 | 本插件 |
+| --- | --- | --- | --- |
+| 0.2.x | `SettingsForms` | 遍历 profile 条目，取 `entry.fiber.runtime.Config` 当 schema **自动派生**一页（`autoGenerate` 默认 true）；`volatileForm()` 会丢掉没有任何 volatile 字段的条目 | 导出 `Config` 即可，无需别的代码 |
+| 0.1.x | `SettingsProvider` | `describe()` 只列**显式注册过**的命名空间 | 自己调 `settings.register('dsh-postman', Config, { base })`，并 `watch()` 变更做实时生效 |
+
+两条路径互不干扰：0.2.x 的服务没有 `register` 方法，插件会直接跳过；0.1.x 不读 `Config`。
+
+`apiKey` 必须标 `volatile`（这里用 `.extra('volatile', true)`，见 `src/index.js` 的注释）：
+在 0.2.x 上，一个 volatile 字段都没有的条目会被 `volatileForm()` 整个滤掉，设置里那一页直接消失。
+
+> 自检：`node test/settings-page.js` 会逐行复刻 dsh 已构建产物里的表单投影逻辑跑一遍真实
+> `Config`，并带一条反向对照（去掉 volatile → 条目必被丢弃）。
+> 想直接看 dsh 侧的判定：`dsh --profile web --dump-config-schema`，
+> `dsh-postman` 应指向真实 schema（如 `#/$defs/config101`）而不是 `unknownConfig`。
 
 ## 技能：/postman-skill
 
@@ -142,6 +156,7 @@ dsh-postman/
   test/
     smoke.js            # 冒烟测试（假 ctx 加载 + 契约校验 + 真实 list 调用）
     scanner.js          # 扫描器单测（内联 fixture，5 组断言）
+    settings-page.js    # 设置页回归：复刻 dsh 的表单投影逻辑跑真实 Config
     realstart.sh        # 真启动验证（起实例 + 探路由 + 查致命报错）
   scripts/
     setup-publish.sh    # 一键填仓库地址 + 生成市场投稿文件
@@ -153,16 +168,27 @@ dsh-postman/
 
 ```sh
 cd E:/Code/DshPlugins/dsh-postman
-npm run check        # node --check 五个源文件
-node test/smoke.js   # 导出契约 + Config + 工具 + 技能 + 路由
-node test/scanner.js # 扫描器单测
-npm run test:real    # 真启动一个 dsh web 实例，验证插件能加载且不崩
+npm run check             # node --check 五个源文件
+node test/smoke.js        # 导出契约 + Config + 工具 + 技能 + 设置命名空间 + 路由
+node test/scanner.js      # 扫描器单测
+node test/settings-page.js # 设置页会不会出现（含反向对照）
+npm test                  # 上面三个一起跑
+npm run test:real         # 真启动一个 dsh web 实例，验证插件能加载且不崩
 ```
 
 > `test:real` 会在空闲端口（默认 3099）拉起一个真实 dsh 实例，探测
 > `/dsh-postman` 是否返回 200，并检查启动日志里有无 `unsupported JSON schema`
 > 之类的致命错误。**改完工具 schema 或 Config 一定要跑它**——`--dump-config`
 > 只组合 YAML、不 import 插件，测不出这类问题。
+>
+> 两代运行时都测过（用 `DSH=` 指定入口）：
+>
+> ```sh
+> # 已安装运行时（0.1.x，走 settings.register 那条路径）
+> bash test/realstart.sh 3096
+> # 源码仓库运行时（0.2.x，走 Config 自动派生那条路径）
+> DSH="E:/software/deepseek-harness/apps/cli/lib/bin.js" bash test/realstart.sh 3097
+> ```
 >
 > 设置页 schema 单独验证：
 >

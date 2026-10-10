@@ -3,6 +3,32 @@
 本文件记录 dsh-postman 的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.1] — 2026-10-10
+
+### Added
+
+- **`test/settings-page.js`**：设置页回归测试。逐行复刻 dsh 已构建产物
+  （`packages/settings/settings/lib/index.js`）里的 `volatileForm` / `plainSchema` /
+  `projectForm`，跑真实 `Config`，并带一条**反向对照**（去掉 volatile 标记 → 条目必被
+  丢弃），把「设置页会不会出现」这件事钉进 CI。
+- `test/smoke.js` 覆盖旧版 dsh 的 `settings.register()` 路径：断言命名空间、`base`、
+  以及 watch 订阅，并模拟一次设置写入验证**改完立即生效**。
+
+### Changed
+
+- **旧版 dsh（0.1.x 的 `SettingsProvider`）的设置改为实时生效**：注册命名空间后
+  `watch()` 变更并就地刷新插件配置，对齐官方 `installSettingsSection()` 的语义。
+  此前只是注册，填完 Key 需要重启 dsh 才读到。
+- Key 来源标识改为「插件配置（dsh 设置页 / cordis.patch.yml / 环境变量）」。
+
+### Fixed
+
+- 更正 0.3.0 里对版本分界的描述：两代 dsh 的差异不是「0.1.7」，而是
+  **两套并存的设置服务实现** —— `SettingsForms`（按 `entry.fiber.runtime.Config`
+  自动派生，`autoGenerate` 默认 true）与 `SettingsProvider`（只列显式注册过的
+  命名空间，必须自己 `register`）。插件现在两条路径都覆盖，且不会重复出页
+  （新版的服务没有 `register` 方法）。
+
 ## [0.3.0] — 2026-10-10
 
 ### Added

@@ -838,23 +838,54 @@ module.exports = {
 
     // ── 设置页命名空间（旧版 dsh 兼容） ──────────────────────────────────────
     //
-    // dsh 0.1.7+ 直接从插件的 Config schema 派生设置页（见模块顶部的 Config 导出），
-    // 什么都不用做。更早的版本（如 0.1.0-rc.7 ~ 0.1.6）没有派生机制，
-    // 必须显式 `settings.register(ns, schema, { base })`。两套并存不会重复出页：
-    // 新版没有 register，旧版不读 Config。
+    // 两代 dsh 的设置机制完全不同，这里都覆盖：
+    //
+    //   0.2.x（SettingsForms）：`describe()` 遍历 profile 条目，取
+    //     `entry.fiber.runtime.Config` 当 schema，自动生成一页（autoGenerate
+    //     默认 true）。插件什么都不用做 —— 只需要导出 Config（见模块顶部）。
+    //
+    //   0.1.x（SettingsProvider）：`describe()` 只列出**显式注册过**的命名空间，
+    //     没有派生机制，必须自己 `settings.register(ns, schema, { base })`。
+    //     官方辅助函数是 `installSettingsSection()`，它注册之后把插件的配置
+    //     来源指向注册返回的 scope，并 watch 变更 —— 也就是「改完立即生效，
+    //     不用重启」。下面按同样的语义手写一遍（不 import 那个包，保持零依赖）。
+    //
+    // 两套并存不会重复出页：0.2.x 的 settings 服务没有 `register` 方法，直接跳过。
     if (Config && typeof ctx.inject === 'function') {
+      /** 把设置里的值并进 pluginConfig（原地改，deps.resolveKey 是闭包读它）。 */
+      const adoptSettingsValue = (value) => {
+        const next = normalizeConfig(value)
+        for (const [key, field] of Object.entries(next)) {
+          if (field !== undefined) pluginConfig[key] = field
+        }
+      }
       try {
         ctx.inject(['settings'], (scoped) => {
           const settings = scoped.settings
           if (settings === null || settings === undefined || typeof settings.register !== 'function') return
-          try {
-            scoped.effect(
-              () => settings.register('dsh-postman', Config, { base: {} }),
-              'dsh-postman: settings namespace'
-            )
-          } catch (error) {
-            warn(`注册设置命名空间失败（旧版 dsh）：${String((error && error.message) || error)}`)
-          }
+          scoped.effect(() => {
+            /** @type {(() => void)|undefined} */
+            let off
+            try {
+              // base = 组合层里的条目配置（这里是 patch/默认值），用户层的值盖在它上面。
+              const base = {}
+              for (const [key, field] of Object.entries(pluginConfig)) {
+                if (field !== undefined) base[key] = field
+              }
+              const scope = settings.register('dsh-postman', Config, { base })
+              if (scope === null || scope === undefined) return () => {}
+              if (typeof scope.get === 'function') adoptSettingsValue(scope.get())
+              if (typeof scope.watch === 'function') {
+                // watch 回调签名是 (next, prev)。
+                off = scope.watch((next) => adoptSettingsValue(next))
+              }
+            } catch (error) {
+              warn(`注册设置命名空间失败（旧版 dsh）：${String((error && error.message) || error)}`)
+            }
+            return () => {
+              if (typeof off === 'function') off()
+            }
+          }, 'dsh-postman: settings namespace')
         })
       } catch {
         /* 没有 settings 服务时忽略 */

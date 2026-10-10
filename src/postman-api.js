@@ -56,7 +56,7 @@ function resolveApiKey(pluginConfig) {
   const cfg = pluginConfig && typeof pluginConfig === 'object' ? pluginConfig : {}
 
   if (typeof cfg.apiKey === 'string' && cfg.apiKey.trim() !== '') {
-    return { key: cfg.apiKey.trim(), source: '插件配置（cordis.patch.yml / 环境变量）' }
+    return { key: cfg.apiKey.trim(), source: '插件配置（dsh 设置页 / cordis.patch.yml / 环境变量）' }
   }
 
   const stored = readJsonFile(CONFIG_FILE)

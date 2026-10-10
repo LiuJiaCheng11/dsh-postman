@@ -15,11 +15,32 @@ const routes = []
 const effects = []
 const skills = []
 const listeners = []
+const settingsRegistrations = []
+const settingsWatchers = []
 
 const fakeSkills = {
   register(def) {
     skills.push(def)
     return () => {}
+  },
+}
+
+/**
+ * 旧版 dsh（0.1.x 的 SettingsProvider）的设置服务替身。
+ * register(ns, schema, options) 返回一个 scope：get() 读值、watch(cb) 订阅变更。
+ */
+const fakeSettingsScope = {
+  get: () => ({ apiKey: '' }),
+  watch(callback) {
+    settingsWatchers.push(callback)
+    return () => {}
+  },
+}
+
+const fakeSettings = {
+  register(ns, schema, options) {
+    settingsRegistrations.push({ ns, schema, options })
+    return fakeSettingsScope
   },
 }
 
@@ -36,6 +57,12 @@ const fakeCtx = {
   },
   on(event, handler) {
     listeners.push(event)
+    return () => {}
+  },
+  inject(names, callback) {
+    if (Array.isArray(names) && names.includes('settings')) {
+      callback({ settings: fakeSettings, effect: fakeCtx.effect })
+    }
     return () => {}
   },
   tools: {
@@ -108,7 +135,7 @@ console.log('   ✓ volatileForm 过滤后仍保留 apiKey')
 console.log('\n2) apply() 执行')
 plugin.apply(fakeCtx, {})
 console.log('   effect 数量 =', effects.length, effects)
-assert.ok(effects.length >= 3, '至少注册 tools / config page / skill 三个 effect')
+assert.ok(effects.length >= 4, '至少注册 tools / config page / settings namespace / skill 四个 effect')
 
 /**
  * 模拟 dsh-tools 的 assertSupportedJsonSchema：校验受支持子集。
@@ -190,24 +217,48 @@ assert.ok(skill.resourceBase && skill.resourceBase.kind === 'directory', 'resour
 assert.ok(listeners.includes('agent/created'), '应监听 agent/created 做 agent 级注册')
 console.log('   ✓ postman-skill（' + skill.content.length + ' 字节正文，resourceBase=' + skill.resourceBase.path + '）')
 
-console.log('\n6) 端到端：postman_list 真实调用')
+console.log('\n6) 旧版 dsh 的设置命名空间（settings.register）')
+assert.strictEqual(settingsRegistrations.length, 1, `期望注册 1 个设置命名空间，实际 ${settingsRegistrations.length}`)
+const registration = settingsRegistrations[0]
+assert.strictEqual(registration.ns, 'dsh-postman', '命名空间必须是 dsh-postman')
+assert.strictEqual(registration.schema, plugin.Config, '注册的 schema 必须是导出的 Config')
+assert.ok(
+  registration.options && typeof registration.options.base === 'object' && registration.options.base !== null,
+  'base 必须是对象（用户层的值盖在它上面）'
+)
+assert.strictEqual(settingsWatchers.length, 1, '必须 watch 变更——设置里改完立即生效，不用重启 dsh')
+console.log('   ✓ settings.register("dsh-postman", Config, { base })')
+
+console.log('\n7) 端到端：postman_list 真实调用')
 const listTool = registered.find((t) => t.name === 'postman_list')
-listTool
-  .execute({})
-  .then((result) => {
+const configTool = registered.find((t) => t.name === 'postman_config')
+
+void (async () => {
+  // 7a. 设置里写入的 Key 是否即时生效（旧版路径：watch → resolveKey）
+  settingsWatchers[0]({ apiKey: 'PMAK-live-from-settings' }, { apiKey: '' })
+  const status = await configTool.execute({ action: 'status' })
+  assert.ok(!status.text.includes('PMAK-live-from-settings'), '状态输出不应回显明文 Key')
+  assert.ok(status.text.includes('设置页'), `状态应说明 Key 来自 dsh 设置页，实际：${status.text}`)
+  console.log('   ✓ 设置变更即时生效（watch 回调改写了 resolveKey 读到的配置）')
+  // 交还回退链：置空后 resolveApiKey 会继续往下找（设置文件 / 历史文件 / 环境变量）
+  settingsWatchers[0]({ apiKey: '' }, { apiKey: 'PMAK-live-from-settings' })
+
+  // 7b. 真实调用一次线上 Postman
+  try {
+    const result = await listTool.execute({})
     assert.ok(result && typeof result.text === 'string', 'execute 必须返回 { text }')
-    console.log('   ✓ 返回：')
+    console.log('   ✓ postman_list 返回：')
     console.log(
       result.text
         .split('\n')
         .map((l) => '     ' + l)
         .join('\n')
     )
-    console.log('\n全部通过 ✅')
-  })
-  .catch((error) => {
+  } catch (error) {
     // 无 Key 或网络不可达时，至少确认是引导性错误而非崩溃
     assert.ok(/API Key|失败|network/i.test(error.message), `意外错误：${error.message}`)
     console.log('   ⚠ 未完成真实调用（可接受）：', error.message)
-    console.log('\n基础校验通过（端到端跳过）✅')
-  })
+  }
+
+  console.log('\n全部通过 ✅')
+})()
