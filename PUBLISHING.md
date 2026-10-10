@@ -16,24 +16,24 @@
 
 ---
 
-## 0. 先改占位符（一键）
+## 0. 改占位符（✅ 已完成 2026-10-10）
 
-`package.json` 里的 `repository` / `homepage` / `bugs` 目前是 `USERNAME` 占位符。
-用脚本一次性填好，同时生成市场投稿文件：
+`package.json` 里的 `repository` / `homepage` / `bugs` 原来填的是 `USERNAME` 占位符，
+已替换成真实仓库 `github.com/LiuJiaCheng11/dsh-postman`，市场投稿文件也已生成。
 
-```sh
-cd E:/Code/DshPlugins/dsh-postman
-bash scripts/setup-publish.sh 你的GitHub用户名
-```
-
-它会做三件事：替换 `package.json` 里的三处地址 → 生成
-`marketplace/你的用户名__dsh-postman.yml`（市场投稿文件）→ 设置 git `origin`。
+> 换账号时重跑：`bash scripts/setup-publish.sh <github用户名>`。
+> 它会做三件事：替换 `package.json` 的三处地址 → 生成
+> `marketplace/<用户名>__dsh-postman.yml` → 设置 git `origin`。
+> **它不会覆盖已经指向同一仓库的 remote**（你用 SSH 推送的话不会被改成 HTTPS）。
 
 `LICENSE` 里的署名已经是 `LiuJiaCheng`，需要的话一并改。
 
 ---
 
-## 1. 推 GitHub
+## 1. 推 GitHub（✅ 已完成）
+
+> 仓库已建好并推送：`git@github.com:LiuJiaCheng11/dsh-postman.git`（SSH）。
+> 下面留作记录 / 换仓库时参考。
 
 在 GitHub 上**先建一个空仓库**（不要勾选 README / .gitignore / LICENSE），
 名字建议 `dsh-postman`，然后：
@@ -43,12 +43,11 @@ cd E:/Code/DshPlugins/dsh-postman
 
 git add -A
 git commit -m "chore: 填写仓库地址"
-git remote add origin https://github.com/你的GitHub用户名/dsh-postman.git
+git remote add origin git@github.com:LiuJiaCheng11/dsh-postman.git
 git push -u origin main
 ```
 
-> 仓库名与 npm 包名保持一致（都叫 `dsh-postman`）最省事。
-> 若用 SSH，把地址换成 `git@github.com:用户名/dsh-postman.git`。
+> 仓库名与 npm 包名保持一致（都叫 `dsh-postman`）最省事 —— **但注意下面第 2 节的撞名问题**。
 
 建议顺手加上仓库话题（Topics）：`dsh`、`dsh-plugin`、`deepseek-harness`、`postman`。
 
@@ -56,7 +55,16 @@ git push -u origin main
 
 ## 2. 发 npm
 
-市场是**通过 npm 安装**的，所以必须先发包。包名 `dsh-postman` 已确认未被占用。
+市场是**通过 npm 安装**的，所以必须先发包。
+
+> ⚠️ **发包前必须重新确认名字**：GitHub 上已有一个同名的 `zhousun55-byte/dsh-postman`
+> （文件上传插件，包名也叫 `dsh-postman`）。npm 上目前两者都还没发布，
+> **谁先发谁占**。发之前再查一次：
+>
+> ```sh
+> curl -s -o /dev/null -w '%{http_code}\n' https://registry.npmjs.org/dsh-postman
+> # 404 = 还能用；200 = 已被占用，改用 dsh-postman-tools 或 @liujiacheng11/dsh-postman
+> ```
 
 ```sh
 cd E:/Code/DshPlugins/dsh-postman
@@ -138,24 +146,48 @@ description:
 市场收录前，用户也能直接装：
 
 ```sh
-# 从 npm 装（发布后）
+# 从 GitHub 装（现在就能用，已实测通过）
+dsh plugin --profile web add github:LiuJiaCheng11/dsh-postman
+
+# 从 npm 装（发布之后才有）
 dsh plugin --profile web add dsh-postman
 
-# 从 GitHub 装
-dsh plugin --profile web add github:你的GitHub用户名/dsh-postman
-
-# 从本地目录装（开发时）
+# 从本地目录装（开发时，装成软链，改代码即时生效）
 dsh plugin --profile web add E:/Code/DshPlugins/dsh-postman
 ```
 
 装完**重启 dsh**（重新 `dsh web`）生效。之后打开
 `http://127.0.0.1:3080/dsh-postman` 填 API Key。
 
+### ⚠️ 包名冲突：GitHub 上已有一个同名的 `dsh-postman`
+
+`zhousun55-byte/dsh-postman`（v1.0.0）是一个**文件上传**插件，包名同样是 `dsh-postman`。
+两者会在四个地方互相覆盖：
+
+| 冲突点 | 说明 |
+|---|---|
+| npm 包名 | `dsh-postman`（npm 上目前**两者都还没发布**，谁先发谁占） |
+| profile 依赖键 | `~/.dsh/profiles/<profile>/package.json` 的 `dependencies.dsh-postman` —— 装一个会把另一个替换掉 |
+| HTTP 路由前缀 | 两者都用 `/dsh-postman`（本项目是配置页，它是 `/dsh-postman/upload`） |
+| 客户端 bundle id | 都是 `dsh-postman` |
+
+**所以：**
+- 装的时候务必认准 `LiuJiaCheng11/dsh-postman`，别照抄别人 README 里的
+  `github:zhousun55-byte/dsh-postman`（那条命令装的是**文件上传插件**）。
+- 发 npm 前先确认名字还在（`curl -s -o /dev/null -w '%{http_code}' https://registry.npmjs.org/dsh-postman`
+  → 404 表示可用）；若已被对方占用，改用 `dsh-postman-tools` 之类的名字，
+  或发布到自己的 scope（`@liujiacheng11/dsh-postman`）。
+- 市场投稿时如果撞名，评审一般会要求改包名。
+
 ---
 
 ## 发版检查清单
 
-- [ ] `package.json` 三处 `USERNAME` 已替换（或跑过 `scripts/setup-publish.sh`）
+- [x] `package.json` 三处 `USERNAME` 已替换 → `github.com/LiuJiaCheng11/dsh-postman`
+- [x] 仓库已推送 → `git@github.com:LiuJiaCheng11/dsh-postman.git`
+- [x] 市场投稿文件已生成 → `marketplace/LiuJiaCheng11__dsh-postman.yml`
+- [x] GitHub 形式的安装命令已实测通过（`dsh plugin --profile web add github:LiuJiaCheng11/dsh-postman`）
+- [ ] **npm 包名再确认一次**（同名 `zhousun55-byte/dsh-postman` 存在，见第 2 节）
 - [ ] `version` 已递增（npm 不允许覆盖已发布版本）
 - [ ] `CHANGELOG.md` 已补本次变更
 - [ ] `npm run check && npm test` 全绿
@@ -163,5 +195,5 @@ dsh plugin --profile web add E:/Code/DshPlugins/dsh-postman
 - [ ] `npm publish --dry-run` 文件清单正确（不应包含 `test/` 与 `scripts/`）
 - [ ] `git tag vX.Y.Z` 并推送
 - [ ] GitHub Release 写清变更（市场会用它当「更新内容」）
-- [ ] 市场投稿文件 `marketplace/<owner>__dsh-postman.yml` 已提 PR
+- [ ] 市场投稿文件 `marketplace/LiuJiaCheng11__dsh-postman.yml` 已提 PR
 - [ ] README 里的安装命令与实际包名一致

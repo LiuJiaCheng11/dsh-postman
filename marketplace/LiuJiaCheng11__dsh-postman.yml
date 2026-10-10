@@ -1,0 +1,6 @@
+url: https://github.com/LiuJiaCheng11/dsh-postman
+name: LiuJiaCheng11/dsh-postman
+category: tools
+description:
+  en: Manage Postman cloud collections from dsh, and scan ASP.NET Core controllers to sync API routes into a collection. Zero dependencies.
+  zh: 在 dsh 里管理 Postman 云端集合，并可扫描 ASP.NET Core 控制器把接口批量同步进集合。零依赖。

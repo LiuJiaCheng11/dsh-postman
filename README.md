@@ -13,21 +13,43 @@
 
 ## 安装
 
-插件目录本身就是一个 dsh bundle。用 dsh 自带的插件命令安装即可：
+插件目录本身就是一个 dsh bundle，用 dsh 自带的插件命令安装（**从 GitHub**）：
 
 ```sh
-# 在任意目录执行；dsh 会把路径转发给 profile 目录的 pnpm
-dsh plugin --profile web add "E:/Code/DshPlugins/dsh-postman"
+dsh plugin --profile web add github:LiuJiaCheng11/dsh-postman
+```
+
+装的是仓库 `main` 分支的最新提交。想固定到某个提交：
+
+```sh
+dsh plugin --profile web add github:LiuJiaCheng11/dsh-postman#<commit-sha>
 ```
 
 安装后 dsh 会自动把 `dsh-postman` 追加进 `~/.dsh/profiles/web/package.json` 的
-`dsh.profile.bundles`。**重启 dsh**（重新 `dsh web`）后插件生效。
+`dsh.profile.bundles`。**重启 dsh**（重新 `dsh web`）后插件生效 —— 实测插件代码
+**不会热重载**，刷新浏览器或开新会话都不够。
+
+> **注意仓库归属**：GitHub 上还有另一个叫 `dsh-postman` 的仓库
+> （`zhousun55-byte/dsh-postman`），那是一个**文件上传插件**，与本项目无关。
+> 两者包名都是 `dsh-postman`，装错会互相覆盖。认准 `LiuJiaCheng11/dsh-postman`。
 
 验证装配：
 
 ```sh
 dsh --profile web --dump-config | grep -i postman
 ```
+
+<details>
+<summary>开发者：从本地目录安装（改代码即时生效，不用重装）</summary>
+
+```sh
+dsh plugin --profile web add "E:/Code/DshPlugins/dsh-postman"
+```
+
+这会装成**软链**（`link:`），源码改动即已「安装」，只需重启 dsh。
+适合开发调试；发布给别人用的命令是上面那条 GitHub 形式。
+
+</details>
 
 ## 配置 Postman API Key
 
@@ -393,10 +415,11 @@ postman_config 1   postman_list 1        ← 共 15 次，0 次报错
 ## 发布
 
 要推到 GitHub / 发 npm / 上架 dsh 插件市场，见 **[PUBLISHING.md](./PUBLISHING.md)**。
-最快路径：
 
-```sh
-bash scripts/setup-publish.sh 你的GitHub用户名   # 填仓库地址 + 生成市场投稿文件
-```
+仓库地址与市场投稿文件已经准备好（`github.com/LiuJiaCheng11/dsh-postman`，
+`marketplace/LiuJiaCheng11__dsh-postman.yml`），剩下的主要是 **npm 发包 + 提市场 PR**。
 
-之后按脚本提示做四步即可。变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
+> ⚠️ 发包前务必再查一次包名是否被占 —— GitHub 上已有一个同名的
+> `zhousun55-byte/dsh-postman`（文件上传插件，包名也叫 `dsh-postman`）。详见 PUBLISHING.md 第 2 节。
+
+变更记录见 [CHANGELOG.md](./CHANGELOG.md)。

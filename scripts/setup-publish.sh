@@ -38,15 +38,23 @@ description:
 YAML
 echo "✓ 市场投稿文件 → ${ENTRY}"
 
-# 3) 设置 git remote
-REMOTE="https://github.com/${OWNER}/${REPO}.git"
-if git remote get-url origin >/dev/null 2>&1; then
-  git remote set-url origin "$REMOTE"
-  echo "✓ git origin 已更新 → ${REMOTE}"
-else
-  git remote add origin "$REMOTE"
-  echo "✓ git origin 已添加 → ${REMOTE}"
-fi
+# 3) 设置 git remote —— 不覆盖已经指向同一仓库的 remote
+#    （很多人用 SSH（git@github.com:...）推送，直接改成 HTTPS 会打断他们的推送方式）
+WANTED_PATH="${OWNER}/${REPO}"
+EXISTING="$(git remote get-url origin 2>/dev/null || true)"
+case "$EXISTING" in
+  "")
+    git remote add origin "https://github.com/${WANTED_PATH}.git"
+    echo "✓ git origin 已添加 → https://github.com/${WANTED_PATH}.git"
+    ;;
+  *"${WANTED_PATH}"*)
+    echo "· git origin 已指向 ${WANTED_PATH}，保持不变 → ${EXISTING}"
+    ;;
+  *)
+    git remote set-url origin "https://github.com/${WANTED_PATH}.git"
+    echo "✓ git origin 已更新 → https://github.com/${WANTED_PATH}.git（原为 ${EXISTING}）"
+    ;;
+esac
 
 cat <<NEXT
 

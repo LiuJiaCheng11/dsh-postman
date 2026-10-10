@@ -64,10 +64,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/USERNAME/dsh-postman.git"
+    "url": "git+https://github.com/LiuJiaCheng11/dsh-postman.git"
   },
-  "homepage": "https://github.com/USERNAME/dsh-postman#readme",
+  "homepage": "https://github.com/LiuJiaCheng11/dsh-postman#readme",
   "bugs": {
-    "url": "https://github.com/USERNAME/dsh-postman/issues"
+    "url": "https://github.com/LiuJiaCheng11/dsh-postman/issues"
   }
 }
